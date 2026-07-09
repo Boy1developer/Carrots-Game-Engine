@@ -39,6 +39,19 @@ namespace gdjs {
       isCastingShadow: boolean;
       isReceivingShadow: boolean;
       materialType?: Cube3DMaterialTypeString;
+      csgRole?: 'Solid' | 'Room' | 'Cutter';
+      csgMode?: 'Box' | 'Combined';
+      csgOperation?: 'Union' | 'Subtract' | 'Intersect';
+      roomMode?: boolean;
+      facesInward?: boolean;
+      wallThickness?: number;
+      generateCollision?: boolean;
+      collisionLayer?: number;
+      collisionMask?: number;
+      collisionPriority?: number;
+      calculateTangents?: boolean;
+      autoSmooth?: boolean;
+      smoothingAngle?: number;
     };
   }
   type FaceName = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom';
@@ -59,6 +72,19 @@ namespace gdjs {
     frn: [string, string, string, string, string, string];
     mt: number;
     tint: string;
+    cm: 'Box' | 'Combined';
+    cr: 'Solid' | 'Room' | 'Cutter';
+    co: 'Union' | 'Subtract' | 'Intersect';
+    rm: boolean;
+    fi: boolean;
+    wt: float;
+    gc: boolean;
+    cl: number;
+    ck: number;
+    cp: number;
+    ct: boolean;
+    as: boolean;
+    sa: number;
   };
 
   type Cube3DObjectNetworkSyncData = Object3DNetworkSyncData &
@@ -89,6 +115,19 @@ namespace gdjs {
     _tint: string;
     _isCastingShadow: boolean = true;
     _isReceivingShadow: boolean = true;
+    private _csgMode: 'Box' | 'Combined';
+    private _csgRole: 'Solid' | 'Room' | 'Cutter';
+    private _csgOperation: 'Union' | 'Subtract' | 'Intersect';
+    private _roomMode: boolean;
+    private _facesInward: boolean;
+    private _wallThickness: number;
+    private _generateCollision: boolean;
+    private _collisionLayer: number;
+    private _collisionMask: number;
+    private _collisionPriority: number;
+    private _calculateTangents: boolean;
+    private _autoSmooth: boolean;
+    private _smoothingAngle: number;
 
     constructor(
       instanceContainer: gdjs.RuntimeInstanceContainer,
@@ -138,8 +177,42 @@ namespace gdjs {
       ];
 
       this._tint = objectData.content.tint || '255;255;255';
-      this._isCastingShadow = objectData.content.isCastingShadow || false;
-      this._isReceivingShadow = objectData.content.isReceivingShadow || false;
+      this._isCastingShadow =
+        objectData.content.isCastingShadow !== undefined
+          ? !!objectData.content.isCastingShadow
+          : true;
+      this._isReceivingShadow =
+        objectData.content.isReceivingShadow !== undefined
+          ? !!objectData.content.isReceivingShadow
+          : true;
+      this._csgMode = objectData.content.csgMode || 'Box';
+      this._csgRole =
+        objectData.content.csgRole ||
+        (objectData.content.roomMode
+          ? 'Room'
+          : objectData.content.csgOperation === 'Subtract'
+            ? 'Cutter'
+            : 'Solid');
+      this._csgOperation = objectData.content.csgOperation || 'Union';
+      this._roomMode = !!objectData.content.roomMode;
+      this._facesInward = !!objectData.content.facesInward || this._roomMode;
+      this._wallThickness = objectData.content.wallThickness || 8;
+      this._generateCollision =
+        objectData.content.generateCollision !== undefined
+          ? !!objectData.content.generateCollision
+          : false;
+      this._collisionLayer = Math.max(0, objectData.content.collisionLayer || 0);
+      this._collisionMask =
+        objectData.content.collisionMask !== undefined
+          ? Math.max(0, objectData.content.collisionMask)
+          : 1;
+      this._collisionPriority = objectData.content.collisionPriority || 0;
+      this._calculateTangents = !!objectData.content.calculateTangents;
+      this._autoSmooth = objectData.content.autoSmooth !== false;
+      this._smoothingAngle =
+        objectData.content.smoothingAngle !== undefined
+          ? Math.max(0, Math.min(180, objectData.content.smoothingAngle))
+          : 30;
 
       this._materialType = this._convertMaterialType(
         objectData.content.materialType
@@ -461,6 +534,77 @@ namespace gdjs {
       ) {
         this.updateShadowReceiving(newObjectData.content.isReceivingShadow);
       }
+      if (oldObjectData.content.csgMode !== newObjectData.content.csgMode) {
+        this.setCSGMode(newObjectData.content.csgMode || 'Box');
+      }
+      if (oldObjectData.content.csgRole !== newObjectData.content.csgRole) {
+        this.setCSGRole(newObjectData.content.csgRole || 'Solid');
+      }
+      if (
+        oldObjectData.content.csgOperation !==
+        newObjectData.content.csgOperation
+      ) {
+        this.setCSGOperation(newObjectData.content.csgOperation || 'Union');
+      }
+      if (oldObjectData.content.roomMode !== newObjectData.content.roomMode) {
+        this.setRoomMode(!!newObjectData.content.roomMode);
+      }
+      if (
+        oldObjectData.content.facesInward !== newObjectData.content.facesInward
+      ) {
+        this.setFacesInward(!!newObjectData.content.facesInward);
+      }
+      if (
+        oldObjectData.content.wallThickness !==
+        newObjectData.content.wallThickness
+      ) {
+        this.setWallThickness(newObjectData.content.wallThickness || 8);
+      }
+      if (
+        oldObjectData.content.generateCollision !==
+        newObjectData.content.generateCollision
+      ) {
+        this.setCollisionGenerationEnabled(
+          !!newObjectData.content.generateCollision
+        );
+      }
+      if (
+        oldObjectData.content.collisionLayer !==
+        newObjectData.content.collisionLayer
+      ) {
+        this.setCollisionLayer(newObjectData.content.collisionLayer || 0);
+      }
+      if (
+        oldObjectData.content.collisionMask !==
+        newObjectData.content.collisionMask
+      ) {
+        this.setCollisionMask(
+          newObjectData.content.collisionMask !== undefined
+            ? newObjectData.content.collisionMask
+            : 1
+        );
+      }
+      if (
+        oldObjectData.content.collisionPriority !==
+        newObjectData.content.collisionPriority
+      ) {
+        this.setCollisionPriority(newObjectData.content.collisionPriority || 0);
+      }
+      if (
+        oldObjectData.content.calculateTangents !==
+        newObjectData.content.calculateTangents
+      ) {
+        this.setCalculateTangentsEnabled(!!newObjectData.content.calculateTangents);
+      }
+      if (oldObjectData.content.autoSmooth !== newObjectData.content.autoSmooth) {
+        this.setAutoSmoothEnabled(newObjectData.content.autoSmooth !== false);
+      }
+      if (
+        oldObjectData.content.smoothingAngle !==
+        newObjectData.content.smoothingAngle
+      ) {
+        this.setSmoothingAngle(newObjectData.content.smoothingAngle || 30);
+      }
 
       return true;
     }
@@ -477,6 +621,19 @@ namespace gdjs {
         trfb: this._textureRepeatFacesBitmask,
         frn: this._faceResourceNames,
         tint: this._tint,
+        cm: this._csgMode,
+        cr: this._csgRole,
+        co: this._csgOperation,
+        rm: this._roomMode,
+        fi: this._facesInward,
+        wt: this._wallThickness,
+        gc: this._generateCollision,
+        cl: this._collisionLayer,
+        ck: this._collisionMask,
+        cp: this._collisionPriority,
+        ct: this._calculateTangents,
+        as: this._autoSmooth,
+        sa: this._smoothingAngle,
       };
     }
 
@@ -537,6 +694,45 @@ namespace gdjs {
           this._renderer.updateTint();
         }
       }
+      if (networkSyncData.cm !== undefined) {
+        this.setCSGMode(networkSyncData.cm);
+      }
+      if (networkSyncData.cr !== undefined) {
+        this.setCSGRole(networkSyncData.cr);
+      }
+      if (networkSyncData.co !== undefined) {
+        this.setCSGOperation(networkSyncData.co);
+      }
+      if (networkSyncData.rm !== undefined) {
+        this.setRoomMode(networkSyncData.rm);
+      }
+      if (networkSyncData.fi !== undefined) {
+        this.setFacesInward(networkSyncData.fi);
+      }
+      if (networkSyncData.wt !== undefined) {
+        this.setWallThickness(networkSyncData.wt);
+      }
+      if (networkSyncData.gc !== undefined) {
+        this.setCollisionGenerationEnabled(networkSyncData.gc);
+      }
+      if (networkSyncData.cl !== undefined) {
+        this.setCollisionLayer(networkSyncData.cl);
+      }
+      if (networkSyncData.ck !== undefined) {
+        this.setCollisionMask(networkSyncData.ck);
+      }
+      if (networkSyncData.cp !== undefined) {
+        this.setCollisionPriority(networkSyncData.cp);
+      }
+      if (networkSyncData.ct !== undefined) {
+        this.setCalculateTangentsEnabled(networkSyncData.ct);
+      }
+      if (networkSyncData.as !== undefined) {
+        this.setAutoSmoothEnabled(networkSyncData.as);
+      }
+      if (networkSyncData.sa !== undefined) {
+        this.setSmoothingAngle(networkSyncData.sa);
+      }
     }
 
     /**
@@ -575,13 +771,360 @@ namespace gdjs {
       this._materialType = newMaterialType;
       this._renderer._updateMaterials();
     }
-    updateShadowCasting(value: boolean) {
-      this._isCastingShadow = value;
+    updateShadowCasting(value: boolean | undefined) {
+      const normalizedValue = value !== false;
+      if (this._isCastingShadow === normalizedValue) {
+        return;
+      }
+      this._isCastingShadow = normalizedValue;
       this._renderer.updateShadowCasting();
     }
-    updateShadowReceiving(value: boolean) {
-      this._isReceivingShadow = value;
+    updateShadowReceiving(value: boolean | undefined) {
+      const normalizedValue = value !== false;
+      if (this._isReceivingShadow === normalizedValue) {
+        return;
+      }
+      this._isReceivingShadow = normalizedValue;
       this._renderer.updateShadowReceiving();
+    }
+
+    setCSGMode(mode: 'Box' | 'Combined'): void {
+      const nextMode = mode === 'Combined' ? 'Combined' : 'Box';
+      if (this._csgMode === nextMode) {
+        return;
+      }
+      this._csgMode = nextMode;
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    getCSGMode(): 'Box' | 'Combined' {
+      return this._csgMode;
+    }
+
+    setCSGRole(role: 'Solid' | 'Room' | 'Cutter'): void {
+      const normalizedRole =
+        role === 'Room' || role === 'Cutter' ? role : 'Solid';
+      if (this._csgRole === normalizedRole) {
+        return;
+      }
+      this._csgRole = normalizedRole;
+      this._roomMode = normalizedRole === 'Room';
+      if (normalizedRole === 'Room') {
+        this._facesInward = true;
+        this._generateCollision = true;
+        this._csgOperation = 'Union';
+      } else if (normalizedRole === 'Cutter') {
+        this._facesInward = false;
+        this._csgOperation = 'Subtract';
+      } else {
+        this._csgOperation = 'Union';
+      }
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    getCSGRole(): 'Solid' | 'Room' | 'Cutter' {
+      return this._csgRole;
+    }
+
+    setCSGOperation(operation: 'Union' | 'Subtract' | 'Intersect'): void {
+      if (
+        operation !== 'Union' &&
+        operation !== 'Subtract' &&
+        operation !== 'Intersect'
+      ) {
+        operation = 'Union';
+      }
+      if (this._csgOperation === operation) {
+        return;
+      }
+      this._csgOperation = operation;
+      if (operation === 'Subtract') {
+        this._csgRole = 'Cutter';
+        this._roomMode = false;
+      } else if (this._csgRole === 'Cutter') {
+        this._csgRole = 'Solid';
+      }
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    getCSGOperation(): 'Union' | 'Subtract' | 'Intersect' {
+      return this._csgOperation;
+    }
+
+    setRoomMode(enable: boolean): void {
+      if (this._roomMode === enable) {
+        return;
+      }
+      this._roomMode = enable;
+      this._csgRole = enable ? 'Room' : 'Solid';
+      this.setFacesInward(enable || this._facesInward);
+      this.setCollisionGenerationEnabled(true);
+    }
+
+    isRoomModeEnabled(): boolean {
+      return this._roomMode;
+    }
+
+    setFacesInward(enable: boolean): void {
+      if (this._facesInward === enable) {
+        return;
+      }
+      this._facesInward = enable;
+      this._renderer.updateFaceOrientation();
+    }
+
+    areFacesInward(): boolean {
+      return this._facesInward || this._roomMode;
+    }
+
+    flipFaces(): void {
+      this.setFacesInward(!this.areFacesInward());
+    }
+
+    setWallThickness(wallThickness: float): void {
+      this._wallThickness = Math.max(0, wallThickness || 0);
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    getWallThickness(): float {
+      return this._wallThickness;
+    }
+
+    setCollisionGenerationEnabled(enable: boolean): void {
+      if (this._generateCollision === enable) {
+        return;
+      }
+      this._generateCollision = enable;
+    }
+
+    isCollisionGenerationEnabled(): boolean {
+      return this._generateCollision;
+    }
+
+    setCollisionLayer(collisionLayer: float): void {
+      this._collisionLayer = Math.max(0, Math.floor(collisionLayer || 0));
+    }
+
+    getCollisionLayer(): float {
+      return this._collisionLayer;
+    }
+
+    setCollisionMask(collisionMask: float): void {
+      this._collisionMask = Math.max(0, Math.floor(collisionMask || 0));
+    }
+
+    getCollisionMask(): float {
+      return this._collisionMask;
+    }
+
+    setCollisionPriority(collisionPriority: float): void {
+      this._collisionPriority = collisionPriority || 0;
+    }
+
+    getCollisionPriority(): float {
+      return this._collisionPriority;
+    }
+
+    setCalculateTangentsEnabled(enable: boolean): void {
+      if (this._calculateTangents === enable) {
+        return;
+      }
+      this._calculateTangents = enable;
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    isCalculateTangentsEnabled(): boolean {
+      return this._calculateTangents;
+    }
+
+    setAutoSmoothEnabled(enable: boolean): void {
+      if (this._autoSmooth === enable) {
+        return;
+      }
+      this._autoSmooth = enable;
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    isAutoSmoothEnabled(): boolean {
+      return this._autoSmooth;
+    }
+
+    setSmoothingAngle(smoothingAngle: float): void {
+      const normalizedAngle = Math.max(0, Math.min(180, smoothingAngle || 0));
+      if (this._smoothingAngle === normalizedAngle) {
+        return;
+      }
+      this._smoothingAngle = normalizedAngle;
+      this._renderer.updateGeneratedGeometry();
+    }
+
+    getSmoothingAngle(): float {
+      return this._smoothingAngle;
+    }
+
+    getCSGCollisionSurfaces(): Array<{
+      name: string;
+      x: float;
+      y: float;
+      z: float;
+      width: float;
+      height: float;
+      depth: float;
+      collisionLayer: float;
+      collisionMask: float;
+      collisionPriority: float;
+    }> {
+      if (!this._generateCollision) return [];
+
+      const width = this.getWidth();
+      const height = this.getHeight();
+      const depth = this.getDepth();
+      const thickness = this._roomMode
+        ? Math.max(this._wallThickness, 0.001)
+        : Math.min(width, height, depth);
+
+      if (!this._roomMode) {
+        return [
+          {
+            name: 'solid',
+            x: this.getX(),
+            y: this.getY(),
+            z: this.getZ(),
+            width,
+            height,
+            depth,
+            collisionLayer: this._collisionLayer,
+            collisionMask: this._collisionMask,
+            collisionPriority: this._collisionPriority,
+          },
+        ];
+      }
+
+      return [
+        {
+          name: 'floor',
+          x: this.getX(),
+          y: this.getY(),
+          z: this.getZ(),
+          width,
+          height: thickness,
+          depth,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+        {
+          name: 'ceiling',
+          x: this.getX(),
+          y: this.getY() + height - thickness,
+          z: this.getZ(),
+          width,
+          height: thickness,
+          depth,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+        {
+          name: 'frontWall',
+          x: this.getX(),
+          y: this.getY(),
+          z: this.getZ(),
+          width,
+          height,
+          depth: thickness,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+        {
+          name: 'backWall',
+          x: this.getX(),
+          y: this.getY(),
+          z: this.getZ() + depth - thickness,
+          width,
+          height,
+          depth: thickness,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+        {
+          name: 'leftWall',
+          x: this.getX(),
+          y: this.getY(),
+          z: this.getZ(),
+          width: thickness,
+          height,
+          depth,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+        {
+          name: 'rightWall',
+          x: this.getX() + width - thickness,
+          y: this.getY(),
+          z: this.getZ(),
+          width: thickness,
+          height,
+          depth,
+          collisionLayer: this._collisionLayer,
+          collisionMask: this._collisionMask,
+          collisionPriority: this._collisionPriority,
+        },
+      ];
+    }
+
+    bakeStaticMesh(resultVariable: gdjs.Variable): void {
+      resultVariable.clearChildren();
+      resultVariable.getChild('type').setString('Box');
+      resultVariable.getChild('x').setNumber(this.getX());
+      resultVariable.getChild('y').setNumber(this.getY());
+      resultVariable.getChild('z').setNumber(this.getZ());
+      resultVariable.getChild('width').setNumber(this.getWidth());
+      resultVariable.getChild('height').setNumber(this.getHeight());
+      resultVariable.getChild('depth').setNumber(this.getDepth());
+      resultVariable.getChild('facesInward').setBoolean(this.areFacesInward());
+      resultVariable
+        .getChild('calculateTangents')
+        .setBoolean(this._calculateTangents);
+      resultVariable.getChild('autoSmooth').setBoolean(this._autoSmooth);
+      resultVariable.getChild('smoothingAngle').setNumber(this._smoothingAngle);
+      resultVariable.getChild('materialType').setNumber(this._materialType);
+    }
+
+    bakeCollisionShape(resultVariable: gdjs.Variable): void {
+      this.writeCollisionSurfaces(resultVariable);
+      resultVariable.getChild('collisionLayer').setNumber(this._collisionLayer);
+      resultVariable.getChild('collisionMask').setNumber(this._collisionMask);
+      resultVariable
+        .getChild('collisionPriority')
+        .setNumber(this._collisionPriority);
+    }
+
+    writeCollisionSurfaces(resultVariable: gdjs.Variable): void {
+      resultVariable.clearChildren();
+      const surfaces = this.getCSGCollisionSurfaces();
+      resultVariable.getChild('surfaceCount').setNumber(surfaces.length);
+      const surfacesVariable = resultVariable.getChild('surfaces');
+
+      for (let index = 0; index < surfaces.length; index++) {
+        const surface = surfaces[index];
+        const surfaceVariable = surfacesVariable.getChild(String(index));
+        surfaceVariable.getChild('type').setString(surface.name);
+        surfaceVariable.getChild('x').setNumber(surface.x);
+        surfaceVariable.getChild('y').setNumber(surface.y);
+        surfaceVariable.getChild('z').setNumber(surface.z);
+        surfaceVariable.getChild('width').setNumber(surface.width);
+        surfaceVariable.getChild('height').setNumber(surface.height);
+        surfaceVariable.getChild('depth').setNumber(surface.depth);
+        surfaceVariable.getChild('collisionLayer').setNumber(surface.collisionLayer);
+        surfaceVariable.getChild('collisionMask').setNumber(surface.collisionMask);
+        surfaceVariable
+          .getChild('collisionPriority')
+          .setNumber(surface.collisionPriority);
+      }
     }
   }
 

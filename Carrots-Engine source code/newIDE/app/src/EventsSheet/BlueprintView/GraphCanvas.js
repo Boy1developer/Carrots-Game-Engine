@@ -19,20 +19,6 @@ import { type EventMetadata } from '../EnumerateEventsMetadata';
 import { type ProjectScopedContainersAccessor } from '../../InstructionOrExpression/EventsScope';
 import FlatButton from '../../UI/FlatButton';
 import AddEventIcon from '../../UI/CustomSvgIcons/AddEvent';
-import AddIcon from '../../UI/CustomSvgIcons/Add';
-import ArrowRightIcon from '../../UI/CustomSvgIcons/ArrowRight';
-import CheckCircleIcon from '../../UI/CustomSvgIcons/CheckCircle';
-import CrossIcon from '../../UI/CustomSvgIcons/Cross';
-import EventsIcon from '../../UI/CustomSvgIcons/Events';
-import ExtensionIcon from '../../UI/CustomSvgIcons/Extension';
-import GlobalVariableIcon from '../../UI/CustomSvgIcons/GlobalVariable';
-import HammerIcon from '../../UI/CustomSvgIcons/Hammer';
-import KeyIcon from '../../UI/CustomSvgIcons/Key';
-import LightningIcon from '../../UI/CustomSvgIcons/Lightning';
-import ObjectIcon from '../../UI/CustomSvgIcons/Object';
-import RemoveIcon from '../../UI/CustomSvgIcons/Remove';
-import TreeLeavesIcon from '../../UI/CustomSvgIcons/TreeLeaves';
-import UpdateIcon from '../../UI/CustomSvgIcons/Update';
 import GDevelopThemeContext from '../../UI/Theme/GDevelopThemeContext';
 import './style.css';
 
@@ -46,8 +32,13 @@ const BLUEPRINT_ZOOM_MIN = 0.45;
 const BLUEPRINT_ZOOM_MAX = 1.9;
 const BLUEPRINT_ZOOM_STEP = 0.12;
 const BLUEPRINT_OVERVIEW_PADDING = 160;
+const BLUEPRINT_GRID_SIZE = 24;
 
-type QuickStartEventPreset = 'start' | 'update' | 'fixed-update' | 'key-pressed';
+type QuickStartEventPreset =
+  | 'start'
+  | 'update'
+  | 'fixed-update'
+  | 'key-pressed';
 
 type Props = {|
   project: gdProject,
@@ -89,16 +80,7 @@ type Props = {|
   ) => void,
   onCreateTemplateNode: (
     eventContext: EventContext,
-    templateId:
-      | 'add-force'
-      | 'set-velocity'
-      | 'lerp'
-      | 'branch'
-      | 'sequence'
-      | 'math-add'
-      | 'math-subtract'
-      | 'math-multiply'
-      | 'math-divide'
+    templateId: 'add-force' | 'set-velocity' | 'lerp' | 'branch' | 'sequence'
   ) => void,
   onCreateQuickStartEvent: (
     eventPreset: QuickStartEventPreset,
@@ -164,20 +146,21 @@ type GraphNode = {|
     label: string,
     value: string,
     pinType: DataPinType,
-    isOperator: boolean,
   |}>,
   badges: Array<{| text: string, tone: 'condition' | 'action' | 'meta' |}>,
   addConditionContext: ?InstructionsListContext,
   addActionContext: ?InstructionsListContext,
 |};
 
-type GraphEdge = {|
+type GraphConnection = {|
   id: string,
   fromPinId: string,
   toPinId: string,
   kind: PinKind,
   pinType: PinType,
 |};
+
+type GraphEdge = GraphConnection;
 
 type GraphModel = {|
   nodes: Array<GraphNode>,
@@ -193,13 +176,7 @@ type PinPosition = {|
 
 type PinPositionsById = { [string]: PinPosition };
 
-type ManualConnection = {|
-  id: string,
-  fromPinId: string,
-  toPinId: string,
-  kind: PinKind,
-  pinType: PinType,
-|};
+type ManualConnection = GraphConnection;
 
 type ActiveConnectionDrag = {|
   fromPinId: string,
@@ -242,13 +219,7 @@ type QuickAddMode =
   | 'template-lerp'
   | 'template-branch'
   | 'template-sequence'
-  | 'template-math-add'
-  | 'template-math-subtract'
-  | 'template-math-multiply'
-  | 'template-math-divide'
   | 'event';
-
-type IconComponentType = React.ComponentType<any>;
 
 type GraphContextMenuState = {|
   x: number,
@@ -267,8 +238,6 @@ type InstructionEntry = {|
 
 const clampText = (text: string, maxLength: number): string =>
   text.length > maxLength ? text.slice(0, maxLength - 3) + '...' : text;
-
-const MATH_OPERATOR_VALUES = ['=', '+', '-', '*', '/'];
 
 const getPinDirection = (pinId: string): ?PinDirection => {
   if (pinId.endsWith('-in')) return 'in';
@@ -289,7 +258,9 @@ const getDataPinTypeFromPinId = (pinId: string): DataPinType => {
 };
 
 const getPinTypeFromPinId = (pinId: string): PinType =>
-  getPinKindFromPinId(pinId) === 'exec' ? 'exec' : getDataPinTypeFromPinId(pinId);
+  getPinKindFromPinId(pinId) === 'exec'
+    ? 'exec'
+    : getDataPinTypeFromPinId(pinId);
 
 const areDataPinTypesCompatible = (
   sourcePinType: DataPinType,
@@ -342,15 +313,65 @@ const getConnectionId = ({
   toPinId: string,
 |}): string => `${fromPinId}-->${toPinId}`;
 
-const arePinsConnectable = (sourcePinId: string, targetPinId: string): boolean =>
-  !!normalizeConnection(sourcePinId, targetPinId);
+const arePinsConnectable = (
+  sourcePinId: string,
+  targetPinId: string
+): boolean => !!normalizeConnection(sourcePinId, targetPinId);
+
+const snapCoordinateToGrid = (coordinate: number): number =>
+  Math.round(coordinate / BLUEPRINT_GRID_SIZE) * BLUEPRINT_GRID_SIZE;
+
+const snapWorldPosition = (position: NodePosition): NodePosition => ({
+  x: snapCoordinateToGrid(position.x),
+  y: snapCoordinateToGrid(position.y),
+});
+
+const getDragDelta = ({
+  activeNodeDrag,
+  deltaX,
+  deltaY,
+  shouldSnapToGrid,
+}: {|
+  activeNodeDrag: ActiveNodeDrag,
+  deltaX: number,
+  deltaY: number,
+  shouldSnapToGrid: boolean,
+|}): NodePosition => {
+  if (!shouldSnapToGrid) {
+    return {
+      x: deltaX,
+      y: deltaY,
+    };
+  }
+
+  const anchorNodeId = activeNodeDrag.nodeIds[0];
+  const anchorBasePosition = activeNodeDrag.basePositionsById[anchorNodeId];
+  if (!anchorBasePosition) {
+    return {
+      x: deltaX,
+      y: deltaY,
+    };
+  }
+
+  const snappedAnchorPosition = snapWorldPosition({
+    x: anchorBasePosition.x + deltaX,
+    y: anchorBasePosition.y + deltaY,
+  });
+
+  return {
+    x: snappedAnchorPosition.x - anchorBasePosition.x,
+    y: snappedAnchorPosition.y - anchorBasePosition.y,
+  };
+};
 
 const buildWirePath = (from: PinPosition, to: PinPosition): string => {
   const horizontalDirection = to.x >= from.x ? 1 : -1;
   const curveOffset = Math.max(36, Math.abs(to.x - from.x) * 0.36);
   const controlPoint1X = from.x + curveOffset * horizontalDirection;
   const controlPoint2X = to.x - curveOffset * horizontalDirection;
-  return `M ${from.x} ${from.y} C ${controlPoint1X} ${from.y}, ${controlPoint2X} ${to.y}, ${to.x} ${to.y}`;
+  return `M ${from.x} ${from.y} C ${controlPoint1X} ${
+    from.y
+  }, ${controlPoint2X} ${to.y}, ${to.x} ${to.y}`;
 };
 
 const collectEventNodes = (
@@ -392,7 +413,10 @@ const collectEventNodes = (
   return nodes;
 };
 
-const getEventLanes = (event: gdBaseEvent, i18n: I18nType): Array<BlueprintLane> => {
+const getEventLanes = (
+  event: gdBaseEvent,
+  i18n: I18nType
+): Array<BlueprintLane> => {
   const eventType = event.getType();
   if (eventType === 'BuiltinCommonInstructions::Standard') {
     const standardEvent = gd.asStandardEvent(event);
@@ -598,7 +622,11 @@ const getInstructionParameterPinType = ({
   const normalizedLabel = (label || '').trim().toLowerCase();
   const instructionType = (instruction.getType() || '').toLowerCase();
 
-  if (type === 'expression' || type === 'number' || type === 'numberwithchoices') {
+  if (
+    type === 'expression' ||
+    type === 'number' ||
+    type === 'numberwithchoices'
+  ) {
     return 'number';
   }
   if (type === 'yesorno' || type === 'trueorfalse' || type === 'boolean') {
@@ -630,10 +658,18 @@ const getInstructionParameterPinType = ({
   ) {
     return 'string';
   }
-  if (type.includes('position3') || type.includes('rotation3') || type.includes('scale3')) {
+  if (
+    type.includes('position3') ||
+    type.includes('rotation3') ||
+    type.includes('scale3')
+  ) {
     return 'vector3';
   }
-  if (type.includes('position') || type.includes('point') || type.includes('size')) {
+  if (
+    type.includes('position') ||
+    type.includes('point') ||
+    type.includes('size')
+  ) {
     return 'vector2';
   }
   if (
@@ -680,32 +716,20 @@ const getInstructionNodeParameters = ({
   label: string,
   value: string,
   pinType: DataPinType,
-  isOperator: boolean,
 |}> => {
   const parameterCount = Math.min(instruction.getParametersCount(), maxCount);
   return mapFor(0, parameterCount, index => {
     const label = getInstructionParameterLabel({ metadata, index, i18n });
-    const value = instruction.getParameter(index).getPlainString();
-    const metadataParameterType =
-      metadata && metadata.getParameter
-        ? (metadata.getParameter(index).getType() || '').toLowerCase()
-        : '';
-    const normalizedLabel = (label || '').trim().toLowerCase();
-    const normalizedValue = (value || '').trim();
     return {
       index,
       label,
-      value,
+      value: instruction.getParameter(index).getPlainString(),
       pinType: getInstructionParameterPinType({
         instruction,
         metadata,
         index,
         label,
       }),
-      isOperator:
-        metadataParameterType.includes('operator') ||
-        normalizedLabel.includes('operator') ||
-        MATH_OPERATOR_VALUES.includes(normalizedValue),
     };
   });
 };
@@ -736,7 +760,8 @@ const getEventDisplayName = ({
   eventMetadataByType: { [string]: EventMetadata },
 |}): string => {
   const eventType = event.getType();
-  return eventMetadataByType[eventType] && eventMetadataByType[eventType].fullName
+  return eventMetadataByType[eventType] &&
+    eventMetadataByType[eventType].fullName
     ? eventMetadataByType[eventType].fullName
     : eventType;
 };
@@ -907,7 +932,10 @@ const buildGraphModel = ({
     const eventInPinId = `${eventNodeId}-exec-in`;
     const eventOutPinId = `${eventNodeId}-exec-out`;
 
-    const eventDisplayName = getEventDisplayName({ event, eventMetadataByType });
+    const eventDisplayName = getEventDisplayName({
+      event,
+      eventMetadataByType,
+    });
     const selectedEvent = isEventSelected(selection, event);
     const disabled = isAncestorDisabled || event.isDisabled();
 
@@ -1082,18 +1110,11 @@ const buildGraphModel = ({
           isCondition: true,
           project,
         });
-        const isConditionSelected = isInstructionSelected(selection, instruction);
-        const maxVisibleConditionParameters = isConditionSelected ? 3 : 2;
         const parameters = getInstructionNodeParameters({
           instruction,
           metadata,
           i18n,
-          maxCount: maxVisibleConditionParameters,
         });
-        const hiddenConditionParametersCount = Math.max(
-          0,
-          instruction.getParametersCount() - parameters.length
-        );
         const conditionNodeHeight = 92 + parameters.length * 26;
         const conditionDataPinOffsetStart = 72;
 
@@ -1120,7 +1141,7 @@ const buildGraphModel = ({
           }),
           eventContext,
           instructionContext: entry.instructionContext,
-          isSelected: isConditionSelected,
+          isSelected: isInstructionSelected(selection, instruction),
           disabled,
           pins: [
             {
@@ -1138,7 +1159,9 @@ const buildGraphModel = ({
               pinType: 'boolean',
             },
             ...parameters.map((parameter, parameterIndex) => ({
-              id: `${conditionNodeId}-data-${parameter.pinType}-param-${parameter.index}-in`,
+              id: `${conditionNodeId}-data-${parameter.pinType}-param-${
+                parameter.index
+              }-in`,
               side: 'left',
               offset: conditionDataPinOffsetStart + parameterIndex * 26,
               kind: ('data': PinKind),
@@ -1146,15 +1169,7 @@ const buildGraphModel = ({
             })),
           ],
           parameters,
-          badges:
-            hiddenConditionParametersCount > 0
-              ? [
-                  {
-                    text: `+${hiddenConditionParametersCount} ${i18n._(t`more`)}`,
-                    tone: ('meta': 'condition' | 'action' | 'meta'),
-                  },
-                ]
-              : [],
+          badges: [],
           addConditionContext: null,
           addActionContext: null,
         });
@@ -1166,7 +1181,10 @@ const buildGraphModel = ({
           pinType: 'boolean',
         });
 
-        graphBottom = Math.max(graphBottom, conditionNodeY + conditionNodeHeight);
+        graphBottom = Math.max(
+          graphBottom,
+          conditionNodeY + conditionNodeHeight
+        );
       });
 
       graphBottom = Math.max(graphBottom, branchNodeY + branchNodeHeight);
@@ -1179,9 +1197,6 @@ const buildGraphModel = ({
 
     if (actionEntries.length > 0) {
       let previousActionOutPinId = execSourcePinId;
-      const actionColumns =
-        actionEntries.length <= 2 ? 1 : actionEntries.length <= 6 ? 2 : 4;
-      const actionColumnSpacing = actionColumns === 1 ? 0 : 272;
       const actionRowSpacing = 196;
 
       actionEntries.forEach((entry, index) => {
@@ -1189,9 +1204,9 @@ const buildGraphModel = ({
         const instructionId = instruction.ptr;
         const actionNodeId = `action-node-${instructionId}`;
 
-        const row = Math.floor(index / actionColumns);
-        const column = index % actionColumns;
-        const actionNodeX = actionsBaseX + column * actionColumnSpacing;
+        const row = Math.floor(index / 4);
+        const column = index % 4;
+        const actionNodeX = actionsBaseX + column * 272;
         const actionNodeY = eventNodeY + row * actionRowSpacing;
 
         const actionInPinId = `${actionNodeId}-exec-in`;
@@ -1202,18 +1217,11 @@ const buildGraphModel = ({
           isCondition: false,
           project,
         });
-        const isActionSelected = isInstructionSelected(selection, instruction);
-        const maxVisibleActionParameters = isActionSelected ? 3 : 2;
         const parameters = getInstructionNodeParameters({
           instruction,
           metadata,
           i18n,
-          maxCount: maxVisibleActionParameters,
         });
-        const hiddenActionParametersCount = Math.max(
-          0,
-          instruction.getParametersCount() - parameters.length
-        );
         const actionNodeHeight = 92 + parameters.length * 26;
         const actionDataPinOffsetStart = 72;
 
@@ -1240,7 +1248,7 @@ const buildGraphModel = ({
           }),
           eventContext,
           instructionContext: entry.instructionContext,
-          isSelected: isActionSelected,
+          isSelected: isInstructionSelected(selection, instruction),
           disabled,
           pins: [
             {
@@ -1258,7 +1266,9 @@ const buildGraphModel = ({
               pinType: 'exec',
             },
             ...parameters.map((parameter, parameterIndex) => ({
-              id: `${actionNodeId}-data-${parameter.pinType}-param-${parameter.index}-in`,
+              id: `${actionNodeId}-data-${parameter.pinType}-param-${
+                parameter.index
+              }-in`,
               side: 'left',
               offset: actionDataPinOffsetStart + parameterIndex * 26,
               kind: ('data': PinKind),
@@ -1266,15 +1276,7 @@ const buildGraphModel = ({
             })),
           ],
           parameters,
-          badges:
-            hiddenActionParametersCount > 0
-              ? [
-                  {
-                    text: `+${hiddenActionParametersCount} ${i18n._(t`more`)}`,
-                    tone: ('meta': 'condition' | 'action' | 'meta'),
-                  },
-                ]
-              : [],
+          badges: [],
           addConditionContext: null,
           addActionContext: null,
         });
@@ -1458,6 +1460,7 @@ const getPinElementClass = ({
     !!activeConnectionDrag &&
     activeConnectionDrag.fromPinId !== pin.id &&
     arePinsConnectable(activeConnectionDrag.fromPinId, pin.id);
+  const isIncompatible = !!activeConnectionDrag && !isSource && !isConnectable;
 
   return classNames('gd-blueprint-pin', {
     'gd-blueprint-pin-data': pin.kind === 'data',
@@ -1468,6 +1471,7 @@ const getPinElementClass = ({
     'gd-blueprint-pin-type-vector3': pin.pinType === 'vector3',
     'gd-blueprint-pin-source': isSource,
     'gd-blueprint-pin-connectable': isConnectable,
+    'gd-blueprint-pin-incompatible': isIncompatible,
   });
 };
 
@@ -1485,39 +1489,6 @@ const getNodeClass = (node: GraphNode): string =>
     'gd-blueprint-node-selected': node.isSelected,
     'gd-blueprint-node-disabled': node.disabled,
   });
-
-const getNodeIcon = (node: GraphNode): IconComponentType => {
-  if (node.tone === 'physics') return HammerIcon;
-  if (node.tone === 'tween') return UpdateIcon;
-
-  if (node.kind === 'event') return EventsIcon;
-  if (node.kind === 'branch') return TreeLeavesIcon;
-  if (node.kind === 'sequence') return ArrowRightIcon;
-  if (node.kind === 'condition') return CheckCircleIcon;
-  if (node.kind === 'action') return LightningIcon;
-  return AddIcon;
-};
-
-const getQuickAddItemIcon = (mode: QuickAddMode): IconComponentType => {
-  if (mode === 'event-start') return EventsIcon;
-  if (mode === 'event-update') return UpdateIcon;
-  if (mode === 'event-fixed-update') return UpdateIcon;
-  if (mode === 'event-key-pressed') return KeyIcon;
-  if (mode === 'event') return AddEventIcon;
-  if (mode === 'condition-player' || mode === 'action-player') return ObjectIcon;
-  if (mode === 'condition-global' || mode === 'action-global')
-    return GlobalVariableIcon;
-  if (mode === 'template-add-force' || mode === 'template-set-velocity')
-    return HammerIcon;
-  if (mode === 'template-math-add') return AddIcon;
-  if (mode === 'template-math-subtract') return RemoveIcon;
-  if (mode === 'template-math-multiply') return CrossIcon;
-  if (mode === 'template-math-divide') return ExtensionIcon;
-  if (mode === 'template-branch') return TreeLeavesIcon;
-  if (mode === 'template-sequence') return ArrowRightIcon;
-  if (mode === 'template-lerp') return UpdateIcon;
-  return ExtensionIcon;
-};
 
 const getWireClass = ({
   kind,
@@ -1546,6 +1517,79 @@ const getPinTypeLabel = (pinType: PinType): string => {
   if (pinType === 'string') return 'String';
   if (pinType === 'vector2') return 'Vector2';
   return 'Vector3';
+};
+
+const getCarriedNodeIds = ({
+  rootNode,
+  nodes,
+  edges,
+}: {|
+  rootNode: GraphNode,
+  nodes: Array<GraphNode>,
+  edges: Array<GraphConnection>,
+|}): Array<string> => {
+  const nodeById: { [string]: GraphNode } = {};
+  const pinNodeIdByPinId: { [string]: string } = {};
+  const outgoingNodeIdsByNodeId: { [string]: Array<string> } = {};
+
+  nodes.forEach(node => {
+    nodeById[node.id] = node;
+    node.pins.forEach(pin => {
+      pinNodeIdByPinId[pin.id] = node.id;
+    });
+  });
+
+  edges.forEach(edge => {
+    const fromNodeId = pinNodeIdByPinId[edge.fromPinId];
+    const toNodeId = pinNodeIdByPinId[edge.toPinId];
+    if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+
+    if (!outgoingNodeIdsByNodeId[fromNodeId]) {
+      outgoingNodeIdsByNodeId[fromNodeId] = [];
+    }
+    if (outgoingNodeIdsByNodeId[fromNodeId].includes(toNodeId)) return;
+    outgoingNodeIdsByNodeId[fromNodeId].push(toNodeId);
+  });
+
+  const carriedNodeIds = new Set<string>();
+  const pendingNodeIds = [rootNode.id];
+
+  while (pendingNodeIds.length) {
+    const nodeId = pendingNodeIds.shift();
+    if (!nodeId || carriedNodeIds.has(nodeId)) continue;
+
+    carriedNodeIds.add(nodeId);
+
+    const node = nodeById[nodeId];
+    if (node && node.kind === 'event') {
+      nodes.forEach(candidateNode => {
+        if (
+          candidateNode.clusterId === node.clusterId &&
+          !carriedNodeIds.has(candidateNode.id)
+        ) {
+          pendingNodeIds.push(candidateNode.id);
+        }
+      });
+    }
+
+    const outgoingNodeIds = outgoingNodeIdsByNodeId[nodeId];
+    if (!outgoingNodeIds) continue;
+
+    outgoingNodeIds.forEach(outgoingNodeId => {
+      if (!carriedNodeIds.has(outgoingNodeId)) {
+        pendingNodeIds.push(outgoingNodeId);
+      }
+    });
+  }
+
+  const orderedCarriedNodeIds = nodes
+    .filter(node => carriedNodeIds.has(node.id))
+    .map(node => node.id);
+
+  return [
+    rootNode.id,
+    ...orderedCarriedNodeIds.filter(nodeId => nodeId !== rootNode.id),
+  ];
 };
 
 const clampZoomLevel = (zoom: number): number =>
@@ -1594,35 +1638,46 @@ const BlueprintGraphCanvas = ({
     positionedNodeById: { [string]: GraphNode },
   |}>(null);
 
-  const [nodePositionsById, setNodePositionsById] = React.useState<
-    NodePositionsById
-  >({});
+  const [
+    nodePositionsById,
+    setNodePositionsById,
+  ] = React.useState<NodePositionsById>({});
   const [manualConnections, setManualConnections] = React.useState<
     Array<ManualConnection>
   >([]);
-  const [activeConnectionDrag, setActiveConnectionDrag] = React.useState<?ActiveConnectionDrag>(
-    null
-  );
+  const [
+    activeConnectionDrag,
+    setActiveConnectionDrag,
+  ] = React.useState<?ActiveConnectionDrag>(null);
   const [activeNodeDrag, setActiveNodeDrag] = React.useState<?ActiveNodeDrag>(
     null
   );
   const [activePanDrag, setActivePanDrag] = React.useState<?ActivePanDrag>(
     null
   );
-  const [graphContextMenu, setGraphContextMenu] = React.useState<?GraphContextMenuState>(
-    null
-  );
+  const [
+    graphContextMenu,
+    setGraphContextMenu,
+  ] = React.useState<?GraphContextMenuState>(null);
   const [contextMenuSearchText, setContextMenuSearchText] = React.useState('');
-  const [nodeParameterDraftValues, setNodeParameterDraftValues] = React.useState<{
+  const [
+    nodeParameterDraftValues,
+    setNodeParameterDraftValues,
+  ] = React.useState<{
     [string]: { [number]: string },
   }>({});
-  const [instructionMenuAnchorPosition, setInstructionMenuAnchorPosition] = React.useState<NodePosition>(
-    {
-      x: 0,
-      y: 0,
-    }
-  );
+  const [
+    instructionMenuAnchorPosition,
+    setInstructionMenuAnchorPosition,
+  ] = React.useState<NodePosition>({
+    x: 0,
+    y: 0,
+  });
   const [zoomLevel, setZoomLevel] = React.useState<number>(1);
+  const [isCarryEnabled, setIsCarryEnabled] = React.useState<boolean>(false);
+  const [isSnapToGridEnabled, setIsSnapToGridEnabled] = React.useState<boolean>(
+    true
+  );
   const zoomLevelRef = React.useRef<number>(1);
 
   const eventNodes = React.useMemo(
@@ -1635,9 +1690,12 @@ const BlueprintGraphCanvas = ({
     [theme.palette.type]
   );
 
-  React.useEffect(() => {
-    zoomLevelRef.current = zoomLevel;
-  }, [zoomLevel]);
+  React.useEffect(
+    () => {
+      zoomLevelRef.current = zoomLevel;
+    },
+    [zoomLevel]
+  );
 
   const setZoomAroundPoint = React.useCallback(
     (nextZoomRaw: number, clientX: number, clientY: number) => {
@@ -1662,8 +1720,14 @@ const BlueprintGraphCanvas = ({
       requestAnimationFrame(() => {
         const refreshedRootElement = rootRef.current;
         if (!refreshedRootElement) return;
-        refreshedRootElement.scrollLeft = Math.max(0, worldX * nextZoom - pointerX);
-        refreshedRootElement.scrollTop = Math.max(0, worldY * nextZoom - pointerY);
+        refreshedRootElement.scrollLeft = Math.max(
+          0,
+          worldX * nextZoom - pointerX
+        );
+        refreshedRootElement.scrollTop = Math.max(
+          0,
+          worldY * nextZoom - pointerY
+        );
       });
     },
     []
@@ -1689,141 +1753,156 @@ const BlueprintGraphCanvas = ({
     [setZoomAroundPoint]
   );
 
-  const zoomIn = React.useCallback(() => {
-    zoomFromViewportCenter(zoomLevelRef.current + BLUEPRINT_ZOOM_STEP);
-  }, [zoomFromViewportCenter]);
+  const zoomIn = React.useCallback(
+    () => {
+      zoomFromViewportCenter(zoomLevelRef.current + BLUEPRINT_ZOOM_STEP);
+    },
+    [zoomFromViewportCenter]
+  );
 
-  const zoomOut = React.useCallback(() => {
-    zoomFromViewportCenter(zoomLevelRef.current - BLUEPRINT_ZOOM_STEP);
-  }, [zoomFromViewportCenter]);
+  const zoomOut = React.useCallback(
+    () => {
+      zoomFromViewportCenter(zoomLevelRef.current - BLUEPRINT_ZOOM_STEP);
+    },
+    [zoomFromViewportCenter]
+  );
 
-  const resetZoom = React.useCallback(() => {
-    zoomFromViewportCenter(1);
-  }, [zoomFromViewportCenter]);
+  const resetZoom = React.useCallback(
+    () => {
+      zoomFromViewportCenter(1);
+    },
+    [zoomFromViewportCenter]
+  );
 
-  const showOverview = React.useCallback(() => {
-    const rootElement = rootRef.current;
-    if (!rootElement) return;
+  const showOverview = React.useCallback(
+    () => {
+      const rootElement = rootRef.current;
+      if (!rootElement) return;
 
-    const latestGraphModel = latestGraphModelRef.current;
-    if (!latestGraphModel || !latestGraphModel.nodes.length) {
-      const fallbackZoom = 1;
-      setZoomLevel(fallbackZoom);
-      requestAnimationFrame(() => {
-        const refreshedRootElement = rootRef.current;
-        if (!refreshedRootElement) return;
-        refreshedRootElement.scrollLeft = Math.max(
-          0,
-          BLUEPRINT_WORLD_OFFSET_X * fallbackZoom -
-            refreshedRootElement.clientWidth * 0.38
-        );
-        refreshedRootElement.scrollTop = Math.max(
-          0,
-          BLUEPRINT_WORLD_OFFSET_Y * fallbackZoom -
-            refreshedRootElement.clientHeight * 0.32
-        );
+      const latestGraphModel = latestGraphModelRef.current;
+      if (!latestGraphModel || !latestGraphModel.nodes.length) {
+        const fallbackZoom = 1;
+        setZoomLevel(fallbackZoom);
+        requestAnimationFrame(() => {
+          const refreshedRootElement = rootRef.current;
+          if (!refreshedRootElement) return;
+          refreshedRootElement.scrollLeft = Math.max(
+            0,
+            BLUEPRINT_WORLD_OFFSET_X * fallbackZoom -
+              refreshedRootElement.clientWidth * 0.38
+          );
+          refreshedRootElement.scrollTop = Math.max(
+            0,
+            BLUEPRINT_WORLD_OFFSET_Y * fallbackZoom -
+              refreshedRootElement.clientHeight * 0.32
+          );
+        });
+        return;
+      }
+
+      const positionedNodes = latestGraphModel.nodes.map(node => {
+        const customPosition = nodePositionsById[node.id];
+        return customPosition
+          ? {
+              x: customPosition.x,
+              y: customPosition.y,
+              width: node.width,
+              height: node.height,
+            }
+          : {
+              x: node.x + BLUEPRINT_WORLD_OFFSET_X,
+              y: node.y + BLUEPRINT_WORLD_OFFSET_Y,
+              width: node.width,
+              height: node.height,
+            };
       });
-      return;
-    }
 
-    const positionedNodes = latestGraphModel.nodes.map(node => {
-      const customPosition = nodePositionsById[node.id];
-      return customPosition
-        ? {
-            x: customPosition.x,
-            y: customPosition.y,
-            width: node.width,
-            height: node.height,
-          }
-        : {
-            x: node.x + BLUEPRINT_WORLD_OFFSET_X,
-            y: node.y + BLUEPRINT_WORLD_OFFSET_Y,
-            width: node.width,
-            height: node.height,
-          };
-    });
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      positionedNodes.forEach(node => {
+        minX = Math.min(minX, node.x);
+        minY = Math.min(minY, node.y);
+        maxX = Math.max(maxX, node.x + node.width);
+        maxY = Math.max(maxY, node.y + node.height);
+      });
 
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    positionedNodes.forEach(node => {
-      minX = Math.min(minX, node.x);
-      minY = Math.min(minY, node.y);
-      maxX = Math.max(maxX, node.x + node.width);
-      maxY = Math.max(maxY, node.y + node.height);
-    });
-
-    if (
-      !Number.isFinite(minX) ||
-      !Number.isFinite(minY) ||
-      !Number.isFinite(maxX) ||
-      !Number.isFinite(maxY)
-    ) {
-      return;
-    }
-
-    const paddedWidth = Math.max(
-      1,
-      maxX - minX + BLUEPRINT_OVERVIEW_PADDING * 2
-    );
-    const paddedHeight = Math.max(
-      1,
-      maxY - minY + BLUEPRINT_OVERVIEW_PADDING * 2
-    );
-    const targetZoom = clampZoomLevel(
-      Math.min(
-        rootElement.clientWidth / paddedWidth,
-        rootElement.clientHeight / paddedHeight
-      )
-    );
-
-    setZoomLevel(targetZoom);
-    requestAnimationFrame(() => {
-      const refreshedRootElement = rootRef.current;
-      if (!refreshedRootElement) return;
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
-      refreshedRootElement.scrollLeft = Math.max(
-        0,
-        centerX * targetZoom - refreshedRootElement.clientWidth / 2
-      );
-      refreshedRootElement.scrollTop = Math.max(
-        0,
-        centerY * targetZoom - refreshedRootElement.clientHeight / 2
-      );
-    });
-  }, [nodePositionsById]);
-
-  React.useEffect(() => {
-    const onKeyDown = (keyboardEvent: KeyboardEvent) => {
-      if (!keyboardEvent.ctrlKey && !keyboardEvent.metaKey) return;
-      const target = keyboardEvent.target;
       if (
-        target instanceof HTMLElement &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
+        !Number.isFinite(minX) ||
+        !Number.isFinite(minY) ||
+        !Number.isFinite(maxX) ||
+        !Number.isFinite(maxY)
       ) {
         return;
       }
 
-      if (keyboardEvent.key === '+' || keyboardEvent.key === '=') {
-        keyboardEvent.preventDefault();
-        zoomIn();
-      } else if (keyboardEvent.key === '-' || keyboardEvent.key === '_') {
-        keyboardEvent.preventDefault();
-        zoomOut();
-      } else if (keyboardEvent.key === '0') {
-        keyboardEvent.preventDefault();
-        resetZoom();
-      }
-    };
+      const paddedWidth = Math.max(
+        1,
+        maxX - minX + BLUEPRINT_OVERVIEW_PADDING * 2
+      );
+      const paddedHeight = Math.max(
+        1,
+        maxY - minY + BLUEPRINT_OVERVIEW_PADDING * 2
+      );
+      const targetZoom = clampZoomLevel(
+        Math.min(
+          rootElement.clientWidth / paddedWidth,
+          rootElement.clientHeight / paddedHeight
+        )
+      );
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [zoomIn, zoomOut, resetZoom]);
+      setZoomLevel(targetZoom);
+      requestAnimationFrame(() => {
+        const refreshedRootElement = rootRef.current;
+        if (!refreshedRootElement) return;
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        refreshedRootElement.scrollLeft = Math.max(
+          0,
+          centerX * targetZoom - refreshedRootElement.clientWidth / 2
+        );
+        refreshedRootElement.scrollTop = Math.max(
+          0,
+          centerY * targetZoom - refreshedRootElement.clientHeight / 2
+        );
+      });
+    },
+    [nodePositionsById]
+  );
+
+  React.useEffect(
+    () => {
+      const onKeyDown = (keyboardEvent: KeyboardEvent) => {
+        if (!keyboardEvent.ctrlKey && !keyboardEvent.metaKey) return;
+        const target = keyboardEvent.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+
+        if (keyboardEvent.key === '+' || keyboardEvent.key === '=') {
+          keyboardEvent.preventDefault();
+          zoomIn();
+        } else if (keyboardEvent.key === '-' || keyboardEvent.key === '_') {
+          keyboardEvent.preventDefault();
+          zoomOut();
+        } else if (keyboardEvent.key === '0') {
+          keyboardEvent.preventDefault();
+          resetZoom();
+        }
+      };
+
+      window.addEventListener('keydown', onKeyDown);
+      return () => window.removeEventListener('keydown', onKeyDown);
+    },
+    [zoomIn, zoomOut, resetZoom]
+  );
 
   React.useEffect(
     () => () => {
@@ -1841,243 +1920,277 @@ const BlueprintGraphCanvas = ({
 
     rootElement.scrollLeft = Math.max(
       0,
-      BLUEPRINT_WORLD_OFFSET_X * zoomLevelRef.current - rootElement.clientWidth * 0.38
+      BLUEPRINT_WORLD_OFFSET_X * zoomLevelRef.current -
+        rootElement.clientWidth * 0.38
     );
     rootElement.scrollTop = Math.max(
       0,
-      BLUEPRINT_WORLD_OFFSET_Y * zoomLevelRef.current - rootElement.clientHeight * 0.32
+      BLUEPRINT_WORLD_OFFSET_Y * zoomLevelRef.current -
+        rootElement.clientHeight * 0.32
     );
     hasCenteredViewRef.current = true;
   }, []);
 
-  const armPendingEventPlacement = React.useCallback((graphX: number, graphY: number) => {
-    const currentZoom = zoomLevelRef.current || 1;
-    pendingEventPlacementRef.current = {
-      x: Math.max(0, Math.round((graphX / currentZoom) * 10) / 10),
-      y: Math.max(0, Math.round((graphY / currentZoom) * 10) / 10),
-    };
-  }, []);
+  const armPendingEventPlacement = React.useCallback(
+    (graphX: number, graphY: number) => {
+      const currentZoom = zoomLevelRef.current || 1;
+      const rawPosition = {
+        x: Math.max(0, Math.round((graphX / currentZoom) * 10) / 10),
+        y: Math.max(0, Math.round((graphY / currentZoom) * 10) / 10),
+      };
+      pendingEventPlacementRef.current = isSnapToGridEnabled
+        ? snapWorldPosition(rawPosition)
+        : rawPosition;
+    },
+    [isSnapToGridEnabled]
+  );
 
-  React.useEffect(() => {
-    const currentEventPointers = eventNodes.map(
-      eventNode => eventNode.eventContext.event.ptr
-    );
-    const currentEventPointerSet = new Set(currentEventPointers);
-    const previousEventPointerSet = knownEventPointersRef.current;
+  React.useEffect(
+    () => {
+      const currentEventPointers = eventNodes.map(
+        eventNode => eventNode.eventContext.event.ptr
+      );
+      const currentEventPointerSet = new Set(currentEventPointers);
+      const previousEventPointerSet = knownEventPointersRef.current;
 
-    if (!previousEventPointerSet) {
-      knownEventPointersRef.current = currentEventPointerSet;
-      return;
-    }
+      if (!previousEventPointerSet) {
+        knownEventPointersRef.current = currentEventPointerSet;
+        return;
+      }
 
-    const pendingEventPlacement = pendingEventPlacementRef.current;
-    if (!pendingEventPlacement) {
-      knownEventPointersRef.current = currentEventPointerSet;
-      return;
-    }
+      const pendingEventPlacement = pendingEventPlacementRef.current;
+      if (!pendingEventPlacement) {
+        knownEventPointersRef.current = currentEventPointerSet;
+        return;
+      }
 
-    const newEventPointers = currentEventPointers.filter(
-      eventPointer => !previousEventPointerSet.has(eventPointer)
-    );
-    if (!newEventPointers.length) {
-      knownEventPointersRef.current = currentEventPointerSet;
-      return;
-    }
+      const newEventPointers = currentEventPointers.filter(
+        eventPointer => !previousEventPointerSet.has(eventPointer)
+      );
+      if (!newEventPointers.length) {
+        knownEventPointersRef.current = currentEventPointerSet;
+        return;
+      }
 
-    const anchorEventPointer = newEventPointers[0];
-    const latestGraphModel = latestGraphModelRef.current;
-    if (!latestGraphModel) {
-      knownEventPointersRef.current = currentEventPointerSet;
-      return;
-    }
+      const anchorEventPointer = newEventPointers[0];
+      const latestGraphModel = latestGraphModelRef.current;
+      if (!latestGraphModel) {
+        knownEventPointersRef.current = currentEventPointerSet;
+        return;
+      }
 
-    const createdClusterIds = newEventPointers.map(
-      eventPointer => `event-cluster-${eventPointer}`
-    );
-    const createdClusterNodes = latestGraphModel.nodes.filter(node =>
-      createdClusterIds.includes(node.clusterId)
-    );
-    const anchorEventNode = createdClusterNodes.find(
-      node => node.kind === 'event' && node.clusterId === `event-cluster-${anchorEventPointer}`
-    );
+      const createdClusterIds = newEventPointers.map(
+        eventPointer => `event-cluster-${eventPointer}`
+      );
+      const createdClusterNodes = latestGraphModel.nodes.filter(node =>
+        createdClusterIds.includes(node.clusterId)
+      );
+      const anchorEventNode = createdClusterNodes.find(
+        node =>
+          node.kind === 'event' &&
+          node.clusterId === `event-cluster-${anchorEventPointer}`
+      );
 
-    if (anchorEventNode && createdClusterNodes.length) {
-      const targetWorldX = pendingEventPlacement.x;
-      const targetWorldY = pendingEventPlacement.y;
-      const anchorEventNodeDefaultWorldX =
-        anchorEventNode.x + BLUEPRINT_WORLD_OFFSET_X;
-      const anchorEventNodeDefaultWorldY =
-        anchorEventNode.y + BLUEPRINT_WORLD_OFFSET_Y;
-      const deltaX = targetWorldX - anchorEventNodeDefaultWorldX;
-      const deltaY = targetWorldY - anchorEventNodeDefaultWorldY;
+      if (anchorEventNode && createdClusterNodes.length) {
+        const targetWorldX = pendingEventPlacement.x;
+        const targetWorldY = pendingEventPlacement.y;
+        const anchorEventNodeDefaultWorldX =
+          anchorEventNode.x + BLUEPRINT_WORLD_OFFSET_X;
+        const anchorEventNodeDefaultWorldY =
+          anchorEventNode.y + BLUEPRINT_WORLD_OFFSET_Y;
+        const deltaX = targetWorldX - anchorEventNodeDefaultWorldX;
+        const deltaY = targetWorldY - anchorEventNodeDefaultWorldY;
 
-      setNodePositionsById(previousNodePositions => {
-        const nextNodePositions = { ...previousNodePositions };
-        createdClusterNodes.forEach(node => {
-          nextNodePositions[node.id] = {
-            x: Math.round(node.x + BLUEPRINT_WORLD_OFFSET_X + deltaX),
-            y: Math.round(node.y + BLUEPRINT_WORLD_OFFSET_Y + deltaY),
-          };
+        setNodePositionsById(previousNodePositions => {
+          const nextNodePositions = { ...previousNodePositions };
+          createdClusterNodes.forEach(node => {
+            nextNodePositions[node.id] = {
+              x: Math.round(node.x + BLUEPRINT_WORLD_OFFSET_X + deltaX),
+              y: Math.round(node.y + BLUEPRINT_WORLD_OFFSET_Y + deltaY),
+            };
+          });
+          return nextNodePositions;
         });
-        return nextNodePositions;
-      });
-    }
+      }
 
-    pendingEventPlacementRef.current = null;
-    knownEventPointersRef.current = currentEventPointerSet;
-  }, [eventNodes]);
+      pendingEventPlacementRef.current = null;
+      knownEventPointersRef.current = currentEventPointerSet;
+    },
+    [eventNodes]
+  );
 
-  React.useEffect(() => {
-    if (!activeConnectionDrag) return;
+  React.useEffect(
+    () => {
+      if (!activeConnectionDrag) return;
 
-    const onPointerMove = (domEvent: PointerEvent) => {
+      const onPointerMove = (domEvent: PointerEvent) => {
+        const contentElement = contentRef.current;
+        if (!contentElement) return;
+
+        const contentRect = contentElement.getBoundingClientRect();
+        setActiveConnectionDrag(previousActiveConnectionDrag =>
+          previousActiveConnectionDrag
+            ? {
+                ...previousActiveConnectionDrag,
+                pointerX: domEvent.clientX - contentRect.left,
+                pointerY: domEvent.clientY - contentRect.top,
+              }
+            : previousActiveConnectionDrag
+        );
+      };
+
+      const onPointerUp = () => {
+        setActiveConnectionDrag(null);
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+
+      return () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+    },
+    [activeConnectionDrag]
+  );
+
+  React.useEffect(
+    () => {
+      if (!activeNodeDrag) return;
+
+      dragMovedRef.current = false;
+      let dragAnimationFrameId: ?number = null;
+      let lastDeltaX = 0;
+      let lastDeltaY = 0;
+
+      const applyNodeDragPosition = () => {
+        const dragDelta = getDragDelta({
+          activeNodeDrag,
+          deltaX: lastDeltaX,
+          deltaY: lastDeltaY,
+          shouldSnapToGrid: isSnapToGridEnabled,
+        });
+
+        setNodePositionsById(previousNodePositions => {
+          const nextNodePositions = { ...previousNodePositions };
+          activeNodeDrag.nodeIds.forEach(nodeId => {
+            const basePosition = activeNodeDrag.basePositionsById[nodeId];
+            if (!basePosition) return;
+            nextNodePositions[nodeId] = {
+              x: Math.round(basePosition.x + dragDelta.x),
+              y: Math.round(basePosition.y + dragDelta.y),
+            };
+          });
+          return nextNodePositions;
+        });
+      };
+
+      const onPointerMove = (domEvent: PointerEvent) => {
+        lastDeltaX =
+          (domEvent.clientX - activeNodeDrag.startClientX) /
+          zoomLevelRef.current;
+        lastDeltaY =
+          (domEvent.clientY - activeNodeDrag.startClientY) /
+          zoomLevelRef.current;
+
+        if (Math.abs(lastDeltaX) > 2 || Math.abs(lastDeltaY) > 2) {
+          dragMovedRef.current = true;
+        }
+
+        if (dragAnimationFrameId !== null) return;
+        dragAnimationFrameId = requestAnimationFrame(() => {
+          dragAnimationFrameId = null;
+          applyNodeDragPosition();
+        });
+      };
+
+      const onPointerUp = () => {
+        const shouldApplyFinalPosition =
+          dragMovedRef.current || dragAnimationFrameId !== null;
+        if (dragAnimationFrameId !== null) {
+          cancelAnimationFrame(dragAnimationFrameId);
+          dragAnimationFrameId = null;
+        }
+        if (shouldApplyFinalPosition) {
+          applyNodeDragPosition();
+        }
+
+        if (dragMovedRef.current) {
+          suppressNodeClickRef.current = true;
+          if (suppressNodeClickTimeoutRef.current) {
+            clearTimeout(suppressNodeClickTimeoutRef.current);
+          }
+          suppressNodeClickTimeoutRef.current = setTimeout(() => {
+            suppressNodeClickRef.current = false;
+          }, 120);
+        }
+        setActiveNodeDrag(null);
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+
+      return () => {
+        if (dragAnimationFrameId !== null) {
+          cancelAnimationFrame(dragAnimationFrameId);
+        }
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+    },
+    [activeNodeDrag, isSnapToGridEnabled]
+  );
+
+  React.useEffect(
+    () => {
+      if (!activePanDrag) return;
+
+      const onPointerMove = (domEvent: PointerEvent) => {
+        const rootElement = rootRef.current;
+        if (!rootElement) return;
+
+        const deltaX = domEvent.clientX - activePanDrag.startClientX;
+        const deltaY = domEvent.clientY - activePanDrag.startClientY;
+        rootElement.scrollLeft = activePanDrag.startScrollLeft - deltaX;
+        rootElement.scrollTop = activePanDrag.startScrollTop - deltaY;
+      };
+
+      const onPointerUp = () => {
+        setActivePanDrag(null);
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+
+      return () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+    },
+    [activePanDrag]
+  );
+
+  const startConnectionDrag = React.useCallback(
+    (domEvent: any, pinId: string) => {
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+      setGraphContextMenu(null);
+      setContextMenuSearchText('');
+      setActivePanDrag(null);
+      setActiveNodeDrag(null);
+
       const contentElement = contentRef.current;
       if (!contentElement) return;
-
       const contentRect = contentElement.getBoundingClientRect();
-      setActiveConnectionDrag(previousActiveConnectionDrag =>
-        previousActiveConnectionDrag
-          ? {
-              ...previousActiveConnectionDrag,
-              pointerX: domEvent.clientX - contentRect.left,
-              pointerY: domEvent.clientY - contentRect.top,
-            }
-          : previousActiveConnectionDrag
-      );
-    };
 
-    const onPointerUp = () => {
-      setActiveConnectionDrag(null);
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-  }, [activeConnectionDrag]);
-
-  React.useEffect(() => {
-    if (!activeNodeDrag) return;
-
-    dragMovedRef.current = false;
-    let dragAnimationFrameId: ?number = null;
-    let lastDeltaX = 0;
-    let lastDeltaY = 0;
-
-    const applyNodeDragPosition = () => {
-      setNodePositionsById(previousNodePositions => {
-        const nextNodePositions = { ...previousNodePositions };
-        activeNodeDrag.nodeIds.forEach(nodeId => {
-          const basePosition = activeNodeDrag.basePositionsById[nodeId];
-          if (!basePosition) return;
-          nextNodePositions[nodeId] = {
-            x: Math.round(basePosition.x + lastDeltaX),
-            y: Math.round(basePosition.y + lastDeltaY),
-          };
-        });
-        return nextNodePositions;
+      setActiveConnectionDrag({
+        fromPinId: pinId,
+        pointerX: domEvent.clientX - contentRect.left,
+        pointerY: domEvent.clientY - contentRect.top,
       });
-    };
-
-    const onPointerMove = (domEvent: PointerEvent) => {
-      lastDeltaX =
-        (domEvent.clientX - activeNodeDrag.startClientX) / zoomLevelRef.current;
-      lastDeltaY =
-        (domEvent.clientY - activeNodeDrag.startClientY) / zoomLevelRef.current;
-
-      if (Math.abs(lastDeltaX) > 2 || Math.abs(lastDeltaY) > 2) {
-        dragMovedRef.current = true;
-      }
-
-      if (dragAnimationFrameId !== null) return;
-      dragAnimationFrameId = requestAnimationFrame(() => {
-        dragAnimationFrameId = null;
-        applyNodeDragPosition();
-      });
-    };
-
-    const onPointerUp = () => {
-      const shouldApplyFinalPosition =
-        dragMovedRef.current || dragAnimationFrameId !== null;
-      if (dragAnimationFrameId !== null) {
-        cancelAnimationFrame(dragAnimationFrameId);
-        dragAnimationFrameId = null;
-      }
-      if (shouldApplyFinalPosition) {
-        applyNodeDragPosition();
-      }
-
-      if (dragMovedRef.current) {
-        suppressNodeClickRef.current = true;
-        if (suppressNodeClickTimeoutRef.current) {
-          clearTimeout(suppressNodeClickTimeoutRef.current);
-        }
-        suppressNodeClickTimeoutRef.current = setTimeout(() => {
-          suppressNodeClickRef.current = false;
-        }, 120);
-      }
-      setActiveNodeDrag(null);
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-
-    return () => {
-      if (dragAnimationFrameId !== null) {
-        cancelAnimationFrame(dragAnimationFrameId);
-      }
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-  }, [activeNodeDrag]);
-
-  React.useEffect(() => {
-    if (!activePanDrag) return;
-
-    const onPointerMove = (domEvent: PointerEvent) => {
-      const rootElement = rootRef.current;
-      if (!rootElement) return;
-
-      const deltaX = domEvent.clientX - activePanDrag.startClientX;
-      const deltaY = domEvent.clientY - activePanDrag.startClientY;
-      rootElement.scrollLeft = activePanDrag.startScrollLeft - deltaX;
-      rootElement.scrollTop = activePanDrag.startScrollTop - deltaY;
-    };
-
-    const onPointerUp = () => {
-      setActivePanDrag(null);
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-  }, [activePanDrag]);
-
-  const startConnectionDrag = React.useCallback((domEvent: any, pinId: string) => {
-    domEvent.preventDefault();
-    domEvent.stopPropagation();
-    setGraphContextMenu(null);
-    setContextMenuSearchText('');
-    setActivePanDrag(null);
-    setActiveNodeDrag(null);
-
-    const contentElement = contentRef.current;
-    if (!contentElement) return;
-    const contentRect = contentElement.getBoundingClientRect();
-
-    setActiveConnectionDrag({
-      fromPinId: pinId,
-      pointerX: domEvent.clientX - contentRect.left,
-      pointerY: domEvent.clientY - contentRect.top,
-    });
-  }, []);
+    },
+    []
+  );
 
   const completeConnectionDrag = React.useCallback(
     (domEvent: any, targetPinId: string) => {
@@ -2127,6 +2240,22 @@ const BlueprintGraphCanvas = ({
     setContextMenuSearchText('');
   }, []);
 
+  const resetBlueprintLayout = React.useCallback(
+    () => {
+      closeGraphContextMenu();
+      setActiveConnectionDrag(null);
+      setActiveNodeDrag(null);
+      setNodePositionsById({});
+    },
+    [closeGraphContextMenu]
+  );
+
+  const removeManualConnection = React.useCallback((connectionId: string) => {
+    setManualConnections(previousConnections =>
+      previousConnections.filter(connection => connection.id !== connectionId)
+    );
+  }, []);
+
   const startNodeDrag = React.useCallback(
     (
       domEvent: any,
@@ -2158,7 +2287,10 @@ const BlueprintGraphCanvas = ({
       if (activeConnectionDrag || activeNodeDrag) return;
 
       const target = domEvent.target;
-      if (target instanceof HTMLElement && target.closest('.gd-blueprint-node')) {
+      if (
+        target instanceof HTMLElement &&
+        target.closest('.gd-blueprint-node')
+      ) {
         return;
       }
 
@@ -2225,11 +2357,7 @@ const BlueprintGraphCanvas = ({
         mode === 'template-set-velocity' ||
         mode === 'template-lerp' ||
         mode === 'template-branch' ||
-        mode === 'template-sequence' ||
-        mode === 'template-math-add' ||
-        mode === 'template-math-subtract' ||
-        mode === 'template-math-multiply' ||
-        mode === 'template-math-divide'
+        mode === 'template-sequence'
       ) {
         if (!eventContext) return;
         const templateId =
@@ -2241,15 +2369,7 @@ const BlueprintGraphCanvas = ({
             ? 'lerp'
             : mode === 'template-branch'
             ? 'branch'
-            : mode === 'template-sequence'
-            ? 'sequence'
-            : mode === 'template-math-add'
-            ? 'math-add'
-            : mode === 'template-math-subtract'
-            ? 'math-subtract'
-            : mode === 'template-math-multiply'
-            ? 'math-multiply'
-            : 'math-divide';
+            : 'sequence';
         closeGraphContextMenu();
         onCreateTemplateNode(eventContext, templateId);
         return;
@@ -2404,7 +2524,11 @@ const BlueprintGraphCanvas = ({
         const pinPositions: PinPositionsById = {};
         positionedNodes.forEach(node => {
           node.pins.forEach(pin => {
-            pinPositions[pin.id] = getPinCenterPosition({ node, pin, zoomLevel });
+            pinPositions[pin.id] = getPinCenterPosition({
+              node,
+              pin,
+              zoomLevel,
+            });
           });
         });
 
@@ -2412,7 +2536,8 @@ const BlueprintGraphCanvas = ({
           BLUEPRINT_WORLD_MIN_WIDTH,
           graphModel.width + BLUEPRINT_WORLD_OFFSET_X * 1.8,
           positionedNodes.reduce(
-            (currentMax, node) => Math.max(currentMax, node.x + node.width + 140),
+            (currentMax, node) =>
+              Math.max(currentMax, node.x + node.width + 140),
             0
           )
         );
@@ -2420,7 +2545,8 @@ const BlueprintGraphCanvas = ({
           BLUEPRINT_WORLD_MIN_HEIGHT,
           graphModel.height + BLUEPRINT_WORLD_OFFSET_Y * 1.8,
           positionedNodes.reduce(
-            (currentMax, node) => Math.max(currentMax, node.y + node.height + 150),
+            (currentMax, node) =>
+              Math.max(currentMax, node.y + node.height + 150),
             0
           )
         );
@@ -2473,7 +2599,9 @@ const BlueprintGraphCanvas = ({
             itemType: 'quick-start',
             enabled: true,
             title: i18n._(t`Key Pressed`),
-            subtitle: i18n._(t`Create keyboard pressed condition event (Space)`),
+            subtitle: i18n._(
+              t`Create keyboard pressed condition event (Space)`
+            ),
             keywords: 'key pressed keyboard input space',
           },
         ];
@@ -2483,7 +2611,8 @@ const BlueprintGraphCanvas = ({
             id: 'condition-player',
             mode: ('condition-player': QuickAddMode),
             itemType: 'picker',
-            enabled: !!graphContextMenu && !!graphContextMenu.addConditionContext,
+            enabled:
+              !!graphContextMenu && !!graphContextMenu.addConditionContext,
             title: i18n._(t`Condition - Player/Object`),
             subtitle: i18n._(
               t`Search object-based conditions (Player, enemies, behaviors...)`
@@ -2494,7 +2623,8 @@ const BlueprintGraphCanvas = ({
             id: 'condition-global',
             mode: ('condition-global': QuickAddMode),
             itemType: 'picker',
-            enabled: !!graphContextMenu && !!graphContextMenu.addConditionContext,
+            enabled:
+              !!graphContextMenu && !!graphContextMenu.addConditionContext,
             title: i18n._(t`Condition - Global/Time/Variables`),
             subtitle: i18n._(
               t`Search global conditions (time, variables, math, logic...)`
@@ -2555,7 +2685,9 @@ const BlueprintGraphCanvas = ({
             itemType: 'template',
             enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
             title: i18n._(t`Template - Lerp`),
-            subtitle: i18n._(t`Create Tween lerp movement node with easing and time`),
+            subtitle: i18n._(
+              t`Create Tween lerp movement node with easing and time`
+            ),
             keywords: 'template lerp tween interpolation smoothing',
           },
           {
@@ -2564,7 +2696,9 @@ const BlueprintGraphCanvas = ({
             itemType: 'template',
             enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
             title: i18n._(t`Template - Branch`),
-            subtitle: i18n._(t`Create a comparison condition to drive true/false flow`),
+            subtitle: i18n._(
+              t`Create a comparison condition to drive true/false flow`
+            ),
             keywords: 'template branch if compare condition true false',
           },
           {
@@ -2577,50 +2711,6 @@ const BlueprintGraphCanvas = ({
               t`Create 2 sub-events and sequence outputs for parallel build`
             ),
             keywords: 'template sequence outputs flow split',
-          },
-          {
-            id: 'template-math-add',
-            mode: ('template-math-add': QuickAddMode),
-            itemType: 'template',
-            enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
-            title: i18n._(t`Template - Math Add`),
-            subtitle: i18n._(
-              t`Create scene variable add operation (Variable += value)`
-            ),
-            keywords: 'template math add plus variable score',
-          },
-          {
-            id: 'template-math-subtract',
-            mode: ('template-math-subtract': QuickAddMode),
-            itemType: 'template',
-            enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
-            title: i18n._(t`Template - Math Subtract`),
-            subtitle: i18n._(
-              t`Create scene variable subtract operation (Variable -= value)`
-            ),
-            keywords: 'template math subtract minus variable score',
-          },
-          {
-            id: 'template-math-multiply',
-            mode: ('template-math-multiply': QuickAddMode),
-            itemType: 'template',
-            enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
-            title: i18n._(t`Template - Math Multiply`),
-            subtitle: i18n._(
-              t`Create scene variable multiply operation (Variable *= value)`
-            ),
-            keywords: 'template math multiply variable score',
-          },
-          {
-            id: 'template-math-divide',
-            mode: ('template-math-divide': QuickAddMode),
-            itemType: 'template',
-            enabled: !!graphContextMenu && !!graphContextMenu.eventContext,
-            title: i18n._(t`Template - Math Divide`),
-            subtitle: i18n._(
-              t`Create scene variable divide operation (Variable /= value)`
-            ),
-            keywords: 'template math divide variable score',
           },
         ];
 
@@ -2724,15 +2814,20 @@ const BlueprintGraphCanvas = ({
               const rect = rootElement.getBoundingClientRect();
               const rawX =
                 domEvent.clientX - rect.left + rootElement.scrollLeft;
-              const rawY =
-                domEvent.clientY - rect.top + rootElement.scrollTop;
+              const rawY = domEvent.clientY - rect.top + rootElement.scrollTop;
               const menuX = Math.max(
                 rootElement.scrollLeft + 10,
-                Math.min(rawX, rootElement.scrollLeft + rootElement.clientWidth - 340)
+                Math.min(
+                  rawX,
+                  rootElement.scrollLeft + rootElement.clientWidth - 340
+                )
               );
               const menuY = Math.max(
                 rootElement.scrollTop + 10,
-                Math.min(rawY, rootElement.scrollTop + rootElement.clientHeight - 312)
+                Math.min(
+                  rawY,
+                  rootElement.scrollTop + rootElement.clientHeight - 312
+                )
               );
 
               setGraphContextMenu({
@@ -2769,6 +2864,62 @@ const BlueprintGraphCanvas = ({
               </button>
               <button
                 type="button"
+                className="gd-blueprint-zoom-button gd-blueprint-layout-button"
+                onClick={resetBlueprintLayout}
+                title={i18n._(t`Reset node positions to the generated layout`)}
+              >
+                {i18n._(t`Auto`)}
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'gd-blueprint-zoom-button',
+                  'gd-blueprint-toolbar-button',
+                  {
+                    'gd-blueprint-zoom-button-active': isSnapToGridEnabled,
+                  }
+                )}
+                aria-pressed={isSnapToGridEnabled}
+                onClick={() =>
+                  setIsSnapToGridEnabled(
+                    previousIsSnapToGridEnabled => !previousIsSnapToGridEnabled
+                  )
+                }
+                title={
+                  isSnapToGridEnabled
+                    ? i18n._(t`Snap is on: nodes align to the blueprint grid`)
+                    : i18n._(t`Snap is off: nodes can be placed freely`)
+                }
+              >
+                {i18n._(t`Snap`)}
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'gd-blueprint-zoom-button',
+                  'gd-blueprint-toolbar-button',
+                  {
+                    'gd-blueprint-zoom-button-active': isCarryEnabled,
+                  }
+                )}
+                aria-pressed={isCarryEnabled}
+                onClick={() =>
+                  setIsCarryEnabled(
+                    previousIsCarryEnabled => !previousIsCarryEnabled
+                  )
+                }
+                title={
+                  isCarryEnabled
+                    ? i18n._(
+                        t`Carry is on: dragging moves this node and following nodes`
+                      )
+                    : i18n._(t`Carry is off: dragging moves only this node`)
+                }
+              >
+                {i18n._(t`Carry`)}
+              </button>
+              <button
+                type="button"
                 className="gd-blueprint-zoom-button"
                 onClick={zoomOut}
                 title={i18n._(t`Zoom out`)}
@@ -2791,7 +2942,9 @@ const BlueprintGraphCanvas = ({
               >
                 +
               </button>
-              <span className="gd-blueprint-zoom-hint">{i18n._(t`Ctrl + Wheel`)}</span>
+              <span className="gd-blueprint-zoom-hint">
+                {i18n._(t`Ctrl + Wheel`)}
+              </span>
             </div>
             <button
               ref={instructionMenuAnchorRef}
@@ -2817,34 +2970,55 @@ const BlueprintGraphCanvas = ({
                 aria-hidden="true"
                 preserveAspectRatio="none"
               >
-                {renderedEdges.map(
-                  renderedEdge =>
-                    renderedEdge && (
-                      <g key={renderedEdge.id}>
+                {renderedEdges.map(renderedEdge => {
+                  if (!renderedEdge) return null;
+
+                  const isManualEdge = manualConnectionIdSet.has(
+                    renderedEdge.id
+                  );
+                  const wireClass = getWireClass({
+                    kind: renderedEdge.kind,
+                    pinType: renderedEdge.pinType,
+                    isManual: isManualEdge,
+                  });
+
+                  return (
+                    <g key={renderedEdge.id}>
+                      {isManualEdge && (
+                        <title>
+                          {i18n._(t`Double-click to remove manual wire`)}
+                        </title>
+                      )}
+                      <path
+                        className={classNames(
+                          'gd-blueprint-wire-shadow',
+                          wireClass
+                        )}
+                        d={renderedEdge.path}
+                      />
+                      <path className={wireClass} d={renderedEdge.path} />
+                      {isManualEdge && (
                         <path
-                          className={classNames(
-                            'gd-blueprint-wire-shadow',
-                            getWireClass({
-                              kind: renderedEdge.kind,
-                              pinType: renderedEdge.pinType,
-                              isManual: manualConnectionIdSet.has(renderedEdge.id),
-                            })
-                          )}
+                          className="gd-blueprint-wire-hit-target"
                           d={renderedEdge.path}
+                          onPointerDown={domEvent => {
+                            domEvent.stopPropagation();
+                          }}
+                          onDoubleClick={domEvent => {
+                            domEvent.preventDefault();
+                            domEvent.stopPropagation();
+                            removeManualConnection(renderedEdge.id);
+                          }}
                         />
-                        <path
-                          className={getWireClass({
-                            kind: renderedEdge.kind,
-                            pinType: renderedEdge.pinType,
-                            isManual: manualConnectionIdSet.has(renderedEdge.id),
-                          })}
-                          d={renderedEdge.path}
-                        />
-                      </g>
-                    )
-                )}
+                      )}
+                    </g>
+                  );
+                })}
                 {!!activeWirePath && (
-                  <path className="gd-blueprint-wire gd-blueprint-wire-active" d={activeWirePath} />
+                  <path
+                    className="gd-blueprint-wire gd-blueprint-wire-active"
+                    d={activeWirePath}
+                  />
                 )}
               </svg>
 
@@ -2861,7 +3035,10 @@ const BlueprintGraphCanvas = ({
                     label={<Trans>Add first event</Trans>}
                     leftIcon={<AddEventIcon />}
                     onClick={() =>
-                      onAddNewEvent('BuiltinCommonInstructions::Standard', events)
+                      onAddNewEvent(
+                        'BuiltinCommonInstructions::Standard',
+                        events
+                      )
                     }
                   />
                 </div>
@@ -2892,15 +3069,13 @@ const BlueprintGraphCanvas = ({
                         return;
                       }
 
-                      const dragNodeIds =
-                        node.kind === 'event'
-                          ? positionedNodes
-                              .filter(
-                                candidateNode =>
-                                  candidateNode.clusterId === node.clusterId
-                              )
-                              .map(candidateNode => candidateNode.id)
-                          : [node.id];
+                      const dragNodeIds = isCarryEnabled
+                        ? getCarriedNodeIds({
+                            rootNode: node,
+                            nodes: positionedNodes,
+                            edges: graphEdges,
+                          })
+                        : [node.id];
                       const basePositionsById: NodePositionsById = {};
                       dragNodeIds.forEach(dragNodeId => {
                         const dragNode = positionedNodeById[dragNodeId];
@@ -2921,7 +3096,10 @@ const BlueprintGraphCanvas = ({
                       domEvent.stopPropagation();
                       closeGraphContextMenu();
                       if (node.instructionContext) {
-                        onInstructionClick(node.eventContext, node.instructionContext);
+                        onInstructionClick(
+                          node.eventContext,
+                          node.instructionContext
+                        );
                       } else {
                         onEventClick(node.eventContext);
                       }
@@ -2929,7 +3107,10 @@ const BlueprintGraphCanvas = ({
                     onDoubleClick={domEvent => {
                       if (!node.instructionContext) return;
                       domEvent.stopPropagation();
-                      onInstructionDoubleClick(node.eventContext, node.instructionContext);
+                      onInstructionDoubleClick(
+                        node.eventContext,
+                        node.instructionContext
+                      );
                     }}
                     onContextMenu={domEvent => {
                       domEvent.preventDefault();
@@ -2952,12 +3133,9 @@ const BlueprintGraphCanvas = ({
                     }}
                   >
                     <div className="gd-blueprint-node-header gd-blueprint-node-drag-handle">
-                      <div className="gd-blueprint-node-title-row">
-                        {React.createElement(getNodeIcon(node), {
-                          className: 'gd-blueprint-node-icon',
-                        })}
-                        <span className="gd-blueprint-node-title">{node.title}</span>
-                      </div>
+                      <span className="gd-blueprint-node-title">
+                        {node.title}
+                      </span>
                       {!!node.badges.length && (
                         <div className="gd-blueprint-node-badges">
                           {node.badges.map((badge, index) => (
@@ -2979,36 +3157,21 @@ const BlueprintGraphCanvas = ({
                       )}
                     </div>
                     <div className="gd-blueprint-node-body">
-                      <div className="gd-blueprint-node-subtitle">{node.subtitle}</div>
+                      <div className="gd-blueprint-node-subtitle">
+                        {node.subtitle}
+                      </div>
                       {!!node.parameters.length && (
                         <div className="gd-blueprint-node-parameters">
                           {node.parameters.map(parameter => {
                             const draftValue =
                               nodeParameterDraftValues[node.id] &&
-                              nodeParameterDraftValues[node.id][parameter.index] !==
-                                undefined
-                                ? nodeParameterDraftValues[node.id][parameter.index]
+                              nodeParameterDraftValues[node.id][
+                                parameter.index
+                              ] !== undefined
+                                ? nodeParameterDraftValues[node.id][
+                                    parameter.index
+                                  ]
                                 : parameter.value;
-                            const normalizedDraftValue = (draftValue || '').trim();
-                            const normalizedParameterValue = (
-                              parameter.value || ''
-                            ).trim();
-                            const shouldUseOperatorPicker =
-                              parameter.isOperator &&
-                              (!normalizedDraftValue ||
-                                MATH_OPERATOR_VALUES.includes(normalizedDraftValue) ||
-                                MATH_OPERATOR_VALUES.includes(
-                                  normalizedParameterValue
-                                ));
-                            const safeOperatorValue = MATH_OPERATOR_VALUES.includes(
-                              normalizedDraftValue
-                            )
-                              ? normalizedDraftValue
-                              : MATH_OPERATOR_VALUES.includes(
-                                  normalizedParameterValue
-                                )
-                              ? normalizedParameterValue
-                              : '=';
 
                             return (
                               <label
@@ -3018,89 +3181,53 @@ const BlueprintGraphCanvas = ({
                                 <span className="gd-blueprint-parameter-label">
                                   {parameter.label}
                                 </span>
-                                {shouldUseOperatorPicker ? (
-                                  <select
-                                    className="gd-blueprint-parameter-input gd-blueprint-parameter-select"
-                                    value={safeOperatorValue}
-                                    onPointerDown={domEvent => domEvent.stopPropagation()}
-                                    onClick={domEvent => domEvent.stopPropagation()}
-                                    onChange={domEvent => {
-                                      setNodeParameterDraftValue(
-                                        node.id,
+                                <input
+                                  type="text"
+                                  className="gd-blueprint-parameter-input"
+                                  value={draftValue}
+                                  onPointerDown={domEvent =>
+                                    domEvent.stopPropagation()
+                                  }
+                                  onClick={domEvent =>
+                                    domEvent.stopPropagation()
+                                  }
+                                  onChange={domEvent => {
+                                    setNodeParameterDraftValue(
+                                      node.id,
+                                      parameter.index,
+                                      domEvent.currentTarget.value
+                                    );
+                                  }}
+                                  onBlur={domEvent => {
+                                    if (!node.instructionContext) return;
+                                    const nextValue =
+                                      domEvent.currentTarget.value;
+                                    if (nextValue !== parameter.value) {
+                                      onSetInstructionParameterValue(
+                                        node.eventContext,
+                                        node.instructionContext,
                                         parameter.index,
-                                        domEvent.currentTarget.value
+                                        nextValue
                                       );
-                                    }}
-                                    onBlur={domEvent => {
-                                      if (!node.instructionContext) return;
-                                      const nextValue = domEvent.currentTarget.value;
-                                      if (nextValue !== parameter.value) {
-                                        onSetInstructionParameterValue(
-                                          node.eventContext,
-                                          node.instructionContext,
-                                          parameter.index,
-                                          nextValue
-                                        );
-                                      }
+                                    }
+                                    clearNodeParameterDraftValue(
+                                      node.id,
+                                      parameter.index
+                                    );
+                                  }}
+                                  onKeyDown={domEvent => {
+                                    if (domEvent.key === 'Escape') {
                                       clearNodeParameterDraftValue(
                                         node.id,
                                         parameter.index
                                       );
-                                    }}
-                                  >
-                                    {MATH_OPERATOR_VALUES.map(operator => (
-                                      <option
-                                        key={`${node.id}-operator-${parameter.index}-${operator}`}
-                                        value={operator}
-                                      >
-                                        {operator}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <input
-                                    type="text"
-                                    className="gd-blueprint-parameter-input"
-                                    value={draftValue}
-                                    onPointerDown={domEvent => domEvent.stopPropagation()}
-                                    onClick={domEvent => domEvent.stopPropagation()}
-                                    onChange={domEvent => {
-                                      setNodeParameterDraftValue(
-                                        node.id,
-                                        parameter.index,
-                                        domEvent.currentTarget.value
-                                      );
-                                    }}
-                                    onBlur={domEvent => {
-                                      if (!node.instructionContext) return;
-                                      const nextValue = domEvent.currentTarget.value;
-                                      if (nextValue !== parameter.value) {
-                                        onSetInstructionParameterValue(
-                                          node.eventContext,
-                                          node.instructionContext,
-                                          parameter.index,
-                                          nextValue
-                                        );
-                                      }
-                                      clearNodeParameterDraftValue(
-                                        node.id,
-                                        parameter.index
-                                      );
-                                    }}
-                                    onKeyDown={domEvent => {
-                                      if (domEvent.key === 'Escape') {
-                                        clearNodeParameterDraftValue(
-                                          node.id,
-                                          parameter.index
-                                        );
-                                        domEvent.currentTarget.blur();
-                                      }
-                                      if (domEvent.key === 'Enter') {
-                                        domEvent.currentTarget.blur();
-                                      }
-                                    }}
-                                  />
-                                )}
+                                      domEvent.currentTarget.blur();
+                                    }
+                                    if (domEvent.key === 'Enter') {
+                                      domEvent.currentTarget.blur();
+                                    }
+                                  }}
+                                />
                               </label>
                             );
                           })}
@@ -3116,7 +3243,8 @@ const BlueprintGraphCanvas = ({
                               domEvent.stopPropagation();
                               if (!node.addConditionContext) return;
                               const button = domEvent.currentTarget;
-                              if (!(button instanceof HTMLButtonElement)) return;
+                              if (!(button instanceof HTMLButtonElement))
+                                return;
                               onAddInstructionContextMenu(
                                 node.eventContext,
                                 button,
@@ -3134,7 +3262,8 @@ const BlueprintGraphCanvas = ({
                               domEvent.stopPropagation();
                               if (!node.addActionContext) return;
                               const button = domEvent.currentTarget;
-                              if (!(button instanceof HTMLButtonElement)) return;
+                              if (!(button instanceof HTMLButtonElement))
+                                return;
                               onAddInstructionContextMenu(
                                 node.eventContext,
                                 button,
@@ -3186,10 +3315,13 @@ const BlueprintGraphCanvas = ({
                   <div className="gd-blueprint-context-menu-target">
                     {graphContextMenu.eventContext ? (
                       <Trans>
-                        Target event #{graphContextMenu.eventContext.indexInList + 1}
+                        Target event #
+                        {graphContextMenu.eventContext.indexInList + 1}
                       </Trans>
                     ) : (
-                      <Trans>No event selected (you can still add a new one)</Trans>
+                      <Trans>
+                        No event selected (you can still add a new one)
+                      </Trans>
                     )}
                   </div>
                   <input
@@ -3205,7 +3337,8 @@ const BlueprintGraphCanvas = ({
                     }}
                   />
                   <div className="gd-blueprint-context-menu-list">
-                    {filteredQuickAddItems.length || filteredTemplateItems.length ? (
+                    {filteredQuickAddItems.length ||
+                    filteredTemplateItems.length ? (
                       <>
                         {!!filteredQuickStartItems.length && (
                           <>
@@ -3216,15 +3349,20 @@ const BlueprintGraphCanvas = ({
                               <button
                                 key={item.id}
                                 type="button"
-                                className={classNames('gd-blueprint-context-menu-item', {
-                                  'gd-blueprint-context-menu-item-condition':
-                                    item.mode.startsWith('condition'),
-                                  'gd-blueprint-context-menu-item-action':
-                                    item.mode.startsWith('action'),
-                                  'gd-blueprint-context-menu-item-event':
-                                    item.mode === 'event' ||
-                                    item.mode.startsWith('event-'),
-                                })}
+                                className={classNames(
+                                  'gd-blueprint-context-menu-item',
+                                  {
+                                    'gd-blueprint-context-menu-item-condition': item.mode.startsWith(
+                                      'condition'
+                                    ),
+                                    'gd-blueprint-context-menu-item-action': item.mode.startsWith(
+                                      'action'
+                                    ),
+                                    'gd-blueprint-context-menu-item-event':
+                                      item.mode === 'event' ||
+                                      item.mode.startsWith('event-'),
+                                  }
+                                )}
                                 onClick={() =>
                                   triggerQuickAdd({
                                     mode: item.mode,
@@ -3238,18 +3376,11 @@ const BlueprintGraphCanvas = ({
                                   })
                                 }
                               >
-                                <span className="gd-blueprint-context-menu-item-content">
-                                  {React.createElement(getQuickAddItemIcon(item.mode), {
-                                    className: 'gd-blueprint-context-menu-item-icon',
-                                  })}
-                                  <span className="gd-blueprint-context-menu-item-text">
-                                    <span className="gd-blueprint-context-menu-item-title">
-                                      {item.title}
-                                    </span>
-                                    <span className="gd-blueprint-context-menu-item-subtitle">
-                                      {item.subtitle}
-                                    </span>
-                                  </span>
+                                <span className="gd-blueprint-context-menu-item-title">
+                                  {item.title}
+                                </span>
+                                <span className="gd-blueprint-context-menu-item-subtitle">
+                                  {item.subtitle}
                                 </span>
                               </button>
                             ))}
@@ -3265,15 +3396,20 @@ const BlueprintGraphCanvas = ({
                               <button
                                 key={item.id}
                                 type="button"
-                                className={classNames('gd-blueprint-context-menu-item', {
-                                  'gd-blueprint-context-menu-item-condition':
-                                    item.mode.startsWith('condition'),
-                                  'gd-blueprint-context-menu-item-action':
-                                    item.mode.startsWith('action'),
-                                  'gd-blueprint-context-menu-item-event':
-                                    item.mode === 'event' ||
-                                    item.mode.startsWith('event-'),
-                                })}
+                                className={classNames(
+                                  'gd-blueprint-context-menu-item',
+                                  {
+                                    'gd-blueprint-context-menu-item-condition': item.mode.startsWith(
+                                      'condition'
+                                    ),
+                                    'gd-blueprint-context-menu-item-action': item.mode.startsWith(
+                                      'action'
+                                    ),
+                                    'gd-blueprint-context-menu-item-event':
+                                      item.mode === 'event' ||
+                                      item.mode.startsWith('event-'),
+                                  }
+                                )}
                                 onClick={() =>
                                   triggerQuickAdd({
                                     mode: item.mode,
@@ -3287,18 +3423,11 @@ const BlueprintGraphCanvas = ({
                                   })
                                 }
                               >
-                                <span className="gd-blueprint-context-menu-item-content">
-                                  {React.createElement(getQuickAddItemIcon(item.mode), {
-                                    className: 'gd-blueprint-context-menu-item-icon',
-                                  })}
-                                  <span className="gd-blueprint-context-menu-item-text">
-                                    <span className="gd-blueprint-context-menu-item-title">
-                                      {item.title}
-                                    </span>
-                                    <span className="gd-blueprint-context-menu-item-subtitle">
-                                      {item.subtitle}
-                                    </span>
-                                  </span>
+                                <span className="gd-blueprint-context-menu-item-title">
+                                  {item.title}
+                                </span>
+                                <span className="gd-blueprint-context-menu-item-subtitle">
+                                  {item.subtitle}
                                 </span>
                               </button>
                             ))}
@@ -3328,18 +3457,11 @@ const BlueprintGraphCanvas = ({
                                   })
                                 }
                               >
-                                <span className="gd-blueprint-context-menu-item-content">
-                                  {React.createElement(getQuickAddItemIcon(item.mode), {
-                                    className: 'gd-blueprint-context-menu-item-icon',
-                                  })}
-                                  <span className="gd-blueprint-context-menu-item-text">
-                                    <span className="gd-blueprint-context-menu-item-title">
-                                      {item.title}
-                                    </span>
-                                    <span className="gd-blueprint-context-menu-item-subtitle">
-                                      {item.subtitle}
-                                    </span>
-                                  </span>
+                                <span className="gd-blueprint-context-menu-item-title">
+                                  {item.title}
+                                </span>
+                                <span className="gd-blueprint-context-menu-item-subtitle">
+                                  {item.subtitle}
                                 </span>
                               </button>
                             ))}

@@ -136,6 +136,102 @@ namespace gdjs {
     return material;
   };
 
+  const refreshGeometryLightingData = (
+    geometry: THREE.BufferGeometry,
+    calculateTangents: boolean,
+    autoSmooth: boolean,
+    smoothingAngle: number
+  ) => {
+    geometry.deleteAttribute('normal');
+    geometry.computeVertexNormals();
+    geometry.userData.gdjsAutoSmooth = autoSmooth;
+    geometry.userData.gdjsSmoothingAngle = Math.max(
+      0,
+      Math.min(180, smoothingAngle || 0)
+    );
+    if (calculateTangents) {
+      const computeTangents = (geometry as any).computeTangents;
+      if (
+        computeTangents &&
+        geometry.getIndex() &&
+        geometry.getAttribute('position') &&
+        geometry.getAttribute('normal') &&
+        geometry.getAttribute('uv')
+      ) {
+        computeTangents.call(geometry);
+      }
+    } else {
+      geometry.deleteAttribute('tangent');
+    }
+
+    const normal = geometry.getAttribute('normal');
+    if (normal) {
+      normal.needsUpdate = true;
+    }
+    const tangent = geometry.getAttribute('tangent');
+    if (tangent) {
+      tangent.needsUpdate = true;
+    }
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+  };
+
+  const invertGeometryFaces = (
+    geometry: THREE.BufferGeometry,
+    inverted: boolean,
+    calculateTangents: boolean,
+    autoSmooth: boolean,
+    smoothingAngle: number
+  ) => {
+    if (geometry.userData.gdjsFacesInward === inverted) return;
+
+    const index = geometry.getIndex();
+    if (index) {
+      for (let i = 0; i < index.count; i += 3) {
+        const b = index.getX(i + 1);
+        const c = index.getX(i + 2);
+        index.setX(i + 1, c);
+        index.setX(i + 2, b);
+      }
+      index.needsUpdate = true;
+    } else {
+      const position = geometry.getAttribute('position');
+      const uv = geometry.getAttribute('uv');
+      for (let i = 0; position && i < position.count; i += 3) {
+        const ax = position.getX(i + 1);
+        const ay = position.getY(i + 1);
+        const az = position.getZ(i + 1);
+        position.setXYZ(
+          i + 1,
+          position.getX(i + 2),
+          position.getY(i + 2),
+          position.getZ(i + 2)
+        );
+        position.setXYZ(i + 2, ax, ay, az);
+        if (uv) {
+          const au = uv.getX(i + 1);
+          const av = uv.getY(i + 1);
+          uv.setXY(i + 1, uv.getX(i + 2), uv.getY(i + 2));
+          uv.setXY(i + 2, au, av);
+        }
+      }
+      if (position) {
+        position.needsUpdate = true;
+      }
+      if (uv) {
+        uv.needsUpdate = true;
+      }
+    }
+
+    refreshGeometryLightingData(
+      geometry,
+      calculateTangents,
+      autoSmooth,
+      smoothingAngle
+    );
+    geometry.userData.gdjsFacesInward = inverted;
+  };
+
   class Cube3DRuntimeObjectPixiRenderer extends gdjs.RuntimeObject3DRenderer {
     private _cube3DRuntimeObject: gdjs.Cube3DRuntimeObject;
     private _boxMesh: THREE.Mesh;
@@ -163,6 +259,7 @@ namespace gdjs {
       this.updatePosition();
       this.updateRotation();
       this.updateTint();
+      this.updateFaceOrientation();
     }
 
     updateTint() {
@@ -191,6 +288,27 @@ namespace gdjs {
     updateShadowReceiving() {
       this._boxMesh.receiveShadow =
         this._cube3DRuntimeObject._isReceivingShadow;
+    }
+
+    updateFaceOrientation() {
+      invertGeometryFaces(
+        this._boxMesh.geometry,
+        this._cube3DRuntimeObject.areFacesInward(),
+        this._cube3DRuntimeObject.isCalculateTangentsEnabled(),
+        this._cube3DRuntimeObject.isAutoSmoothEnabled(),
+        this._cube3DRuntimeObject.getSmoothingAngle()
+      );
+    }
+
+    updateGeneratedGeometry() {
+      refreshGeometryLightingData(
+        this._boxMesh.geometry,
+        this._cube3DRuntimeObject.isCalculateTangentsEnabled(),
+        this._cube3DRuntimeObject.isAutoSmoothEnabled(),
+        this._cube3DRuntimeObject.getSmoothingAngle()
+      );
+      this.updateTextureUvMapping();
+      this.updateFaceOrientation();
     }
 
     updateFace(faceIndex: integer) {

@@ -695,32 +695,80 @@ export default class SceneEditor extends React.Component<Props, State> {
       instance.setDefaultHeight(defaultHeight || 0);
       instance.setDefaultDepth(defaultDepth || 0);
       if (parentPersistentUuid !== undefined) {
-        instance.setParentPersistentUuid(parentPersistentUuid || '');
-        instance.setInheritRotation(inheritRotation !== false);
-        instance.setInheritScale(inheritScale !== false);
+        // $FlowFixMe[prop-missing]
+        if (typeof instance.setParentPersistentUuid === 'function') {
+          // $FlowFixMe[prop-missing]
+          instance.setParentPersistentUuid(parentPersistentUuid || '');
+        }
+        // $FlowFixMe[prop-missing]
+        if (typeof instance.setInheritRotation === 'function') {
+          // $FlowFixMe[prop-missing]
+          instance.setInheritRotation(inheritRotation !== false);
+        }
+        // $FlowFixMe[prop-missing]
+        if (typeof instance.setInheritScale === 'function') {
+          // $FlowFixMe[prop-missing]
+          instance.setInheritScale(inheritScale !== false);
+        }
       }
-      if (localX !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (localX !== undefined && typeof instance.setLocalX === 'function') {
+        // $FlowFixMe[prop-missing]
         instance.setLocalX(localX);
       }
-      if (localY !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (localY !== undefined && typeof instance.setLocalY === 'function') {
+        // $FlowFixMe[prop-missing]
         instance.setLocalY(localY);
       }
-      if (localZ !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (localZ !== undefined && typeof instance.setLocalZ === 'function') {
+        // $FlowFixMe[prop-missing]
         instance.setLocalZ(localZ);
       }
-      if (localAngle !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (
+        localAngle !== undefined &&
+        // $FlowFixMe[prop-missing]
+        typeof instance.setLocalAngle === 'function'
+      ) {
+        // $FlowFixMe[prop-missing]
         instance.setLocalAngle(localAngle);
       }
-      if (localRotationX !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (
+        localRotationX !== undefined &&
+        // $FlowFixMe[prop-missing]
+        typeof instance.setLocalRotationX === 'function'
+      ) {
+        // $FlowFixMe[prop-missing]
         instance.setLocalRotationX(localRotationX);
       }
-      if (localRotationY !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (
+        localRotationY !== undefined &&
+        // $FlowFixMe[prop-missing]
+        typeof instance.setLocalRotationY === 'function'
+      ) {
+        // $FlowFixMe[prop-missing]
         instance.setLocalRotationY(localRotationY);
       }
-      if (localScaleX !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (
+        localScaleX !== undefined &&
+        // $FlowFixMe[prop-missing]
+        typeof instance.setLocalScaleX === 'function'
+      ) {
+        // $FlowFixMe[prop-missing]
         instance.setLocalScaleX(localScaleX);
       }
-      if (localScaleY !== undefined) {
+      // $FlowFixMe[prop-missing]
+      if (
+        localScaleY !== undefined &&
+        // $FlowFixMe[prop-missing]
+        typeof instance.setLocalScaleY === 'function'
+      ) {
+        // $FlowFixMe[prop-missing]
         instance.setLocalScaleY(localScaleY);
       }
 
@@ -1767,6 +1815,57 @@ export default class SceneEditor extends React.Component<Props, State> {
     const objectType = light3D.objectType;
     const objectName = newNameGenerator(
       light3D.defaultName,
+      (name) =>
+        objectsContainer.hasObjectNamed(name) ||
+        (!!globalObjectsContainer &&
+          globalObjectsContainer.hasObjectNamed(name))
+    );
+    const isTheFirstOfItsTypeInProject = !gd.UsedObjectTypeFinder.scanProject(
+      project,
+      objectType
+    );
+
+    this.setState(
+      {
+        newObjectInstanceSceneCoordinates:
+          editorDisplay.viewControls.getLastCursorSceneCoordinates(),
+      },
+      () => {
+        const object = objectsContainer.insertNewObject(
+          project,
+          objectType,
+          objectName,
+          objectsContainer.getObjectsCount()
+        );
+        const objectFolderOrObject = objectsContainer
+          .getRootFolder()
+          .getObjectChild(objectName);
+        if (objectFolderOrObject) {
+          this._onObjectFolderOrObjectWithContextSelected({
+            objectFolderOrObject,
+            global: false,
+          });
+        }
+        this._onObjectCreated([object], isTheFirstOfItsTypeInProject);
+      }
+    );
+  };
+
+  _createObjectAndInstanceUnderCursor = (
+    objectType: string,
+    defaultName: string
+  ) => {
+    if (objectType.startsWith('Scene3D::') && !this.canCurrentSceneContain3DObjects()) {
+      return;
+    }
+    const { editorDisplay } = this;
+    const { project, objectsContainer, globalObjectsContainer } = this.props;
+    if (!editorDisplay) {
+      return;
+    }
+
+    const objectName = newNameGenerator(
+      defaultName,
       (name) =>
         objectsContainer.hasObjectNamed(name) ||
         (!!globalObjectsContainer &&

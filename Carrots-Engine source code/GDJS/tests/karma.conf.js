@@ -171,6 +171,7 @@ module.exports = function (config) {
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/TileMapRuntimeManager.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/tilemapruntimeobject-pixi-renderer.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/tilemapruntimeobject.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/simpletilemapruntimeobject.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/collision/TileMapCollisionMaskRenderer.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/collision/TransformedTileMap.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/TileMap/helper/TileMapHelper.js',
@@ -181,6 +182,7 @@ module.exports = function (config) {
       './newIDE/app/resources/GDJS/Runtime/Extensions/Spine/managers/*.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/SaveState/SaveStateTools.js',
       './newIDE/app/resources/GDJS/Runtime/Extensions/SaveState/SaveConfigurationRuntimeBehavior.js',
+      './newIDE/app/resources/GDJS/Runtime/Extensions/Skew/skewruntimebehavior.js',
 
       // Test extensions:
       './GDJS/tests/tests/Extensions/**.js',

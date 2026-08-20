@@ -3509,6 +3509,12 @@ namespace gdjs {
       snapshotBuffer: Float32Array,
       snapshotOffset: integer
     ): void {
+      if (this.isKinematic() && this.owner3D.hasEstimatedVelocity()) {
+        this.owner3D.resetEstimatedVelocity();
+        this._cacheObjectTransform();
+        return;
+      }
+
       const worldScale = this._sharedData.worldScale;
       this._moveObjectToPhysicsPositionValues(
         snapshotBuffer[snapshotOffset + physicsSnapshotPositionXOffset] *
@@ -3524,6 +3530,7 @@ namespace gdjs {
         snapshotBuffer[snapshotOffset + physicsSnapshotRotationZOffset],
         snapshotBuffer[snapshotOffset + physicsSnapshotRotationWOffset]
       );
+      this.owner3D.resetEstimatedVelocity();
       this._cacheObjectTransform();
     }
 
@@ -8690,9 +8697,17 @@ namespace gdjs {
         // If the body is null, we just don't do anything
         // (but still run the physics simulation - this is independent).
         if (_body !== null && _body.IsActive()) {
+          if (
+            behavior.isKinematic() &&
+            behavior.owner3D.hasEstimatedVelocity()
+          ) {
+            behavior.owner3D.resetEstimatedVelocity();
+            return;
+          }
           behavior._moveObjectToPhysicsPosition(_body.GetPosition());
           behavior._moveObjectToPhysicsRotation(_body.GetRotation());
         }
+        behavior.owner3D.resetEstimatedVelocity();
       }
 
       capturePhysicsSnapshot(
@@ -8728,6 +8743,20 @@ namespace gdjs {
           if (!behavior._createBody()) return;
         }
         const body = behavior._body!;
+
+        if (
+          behavior.isKinematic() &&
+          owner3D.hasEstimatedVelocity()
+        ) {
+          _sharedData.bodyInterface.SetLinearVelocity(
+            body.GetID(),
+            behavior.getVec3(
+              owner3D.getEstimatedVelocityX() * _sharedData.worldInvScale,
+              owner3D.getEstimatedVelocityY() * _sharedData.worldInvScale,
+              owner3D.getEstimatedVelocityZ() * _sharedData.worldInvScale
+            )
+          );
+        }
 
         if (
           this.behavior._objectOldX !== owner3D.getX() ||

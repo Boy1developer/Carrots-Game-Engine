@@ -5,6 +5,14 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
    *   get3DRendererObject: () => THREE.Object3D,
    *   getZ: () => number,
    *   setZ: (z: number) => void,
+   *   hasEstimatedVelocity: () => boolean,
+   *   resetEstimatedVelocity: () => void,
+   *   getEstimatedVelocityX: () => number,
+   *   getEstimatedVelocityY: () => number,
+   *   getEstimatedVelocityZ: () => number,
+   *   setEstimatedVelocityX: (velocityX: number) => void,
+   *   setEstimatedVelocityY: (velocityY: number) => void,
+   *   setEstimatedVelocityZ: (velocityZ: number) => void,
    *   getRotationX: () => number,
    *   getRotationY: () => number
    * }} NavMeshTestRuntimeObject
@@ -84,6 +92,10 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
     );
 
     let z = object3D.position.z;
+    let hasEstimatedVelocity = false;
+    let estimatedVelocityX = 0;
+    let estimatedVelocityY = 0;
+    let estimatedVelocityZ = 0;
     const setX = runtimeObject.setX.bind(runtimeObject);
     const setY = runtimeObject.setY.bind(runtimeObject);
     runtimeObject.setX = function (x) {
@@ -105,6 +117,36 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
       z = value;
       object3D.position.z = value;
     };
+    runtimeObject.hasEstimatedVelocity = function () {
+      return hasEstimatedVelocity;
+    };
+    runtimeObject.resetEstimatedVelocity = function () {
+      hasEstimatedVelocity = false;
+      estimatedVelocityX = 0;
+      estimatedVelocityY = 0;
+      estimatedVelocityZ = 0;
+    };
+    runtimeObject.getEstimatedVelocityX = function () {
+      return estimatedVelocityX;
+    };
+    runtimeObject.getEstimatedVelocityY = function () {
+      return estimatedVelocityY;
+    };
+    runtimeObject.getEstimatedVelocityZ = function () {
+      return estimatedVelocityZ;
+    };
+    runtimeObject.setEstimatedVelocityX = function (velocityX) {
+      hasEstimatedVelocity = true;
+      estimatedVelocityX = velocityX;
+    };
+    runtimeObject.setEstimatedVelocityY = function (velocityY) {
+      hasEstimatedVelocity = true;
+      estimatedVelocityY = velocityY;
+    };
+    runtimeObject.setEstimatedVelocityZ = function (velocityZ) {
+      hasEstimatedVelocity = true;
+      estimatedVelocityZ = velocityZ;
+    };
     runtimeObject.getRotationX = function () {
       return gdjs.toDegrees(object3D.rotation.x);
     };
@@ -122,9 +164,9 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
     return runtimeObject;
   };
 
-  const addSurface = (runtimeScene, name, size) => {
+  const addSurface = (runtimeScene, name, size, segments = 20) => {
     const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(size, size, 20, 20),
+      new THREE.PlaneGeometry(size, size, segments, segments),
       new THREE.MeshBasicMaterial()
     );
     mesh.position.set(0, 0, 0);
@@ -260,6 +302,31 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
     expect(behavior.getNodeCount()).to.be(0);
   });
 
+  it('estimates velocity from NavMesh movement for 3D physics', function () {
+    const runtimeScene = createScene();
+    addSurface(runtimeScene, 'surface', 1000);
+    const agent = addAgent(runtimeScene, 'agent');
+    runtimeScene.renderAndStep(1000 / 60);
+
+    agent.setPosition(-180, 0);
+    agent.setZ(0);
+    agent.resetEstimatedVelocity();
+
+    /** @type {gdjs.NavMeshAgentRuntimeBehavior} */
+    const behavior = /** @type {any} */ (agent.getBehavior('agent'));
+    behavior.setDestination(180, 0, 0);
+    agent.resetEstimatedVelocity();
+
+    for (let i = 0; i < 20 && !agent.hasEstimatedVelocity(); i++) {
+      runtimeScene.renderAndStep(1000 / 60);
+    }
+
+    expect(agent.hasEstimatedVelocity()).to.be(true);
+    expect(agent.getEstimatedVelocityX()).to.be.above(0);
+    expect(Math.abs(agent.getEstimatedVelocityY())).to.be.below(1);
+    expect(Math.abs(agent.getEstimatedVelocityZ())).to.be.below(1);
+  });
+
   it('fails pathfinding when an obstacle blocks the full walkable area', function () {
     const runtimeScene = createScene();
     addSurface(runtimeScene, 'surface', 300);
@@ -277,6 +344,33 @@ describe('gdjs.NavMeshRuntimeBehavior', function () {
     expect(behavior.isPathFound()).to.be(false);
     expect(behavior.getNodeCount()).to.be(0);
     expect(behavior.destinationReached()).to.be(false);
+  });
+
+  it('blocks flat surface triangles when an obstacle overlaps their footprint', function () {
+    const runtimeScene = createScene();
+    addSurface(runtimeScene, 'surface', 300, 1);
+    addObstacle(runtimeScene, 'obstacle', 60, 60, 20);
+    const agent = addAgent(runtimeScene, 'agent');
+
+    const originalIntersectsTriangle =
+      /** @type {any} */ (THREE.Box3.prototype).intersectsTriangle;
+    /** @type {any} */ (THREE.Box3.prototype).intersectsTriangle = undefined;
+    try {
+      runtimeScene.renderAndStep(1000 / 60);
+
+      agent.setPosition(-120, 0);
+      agent.setZ(0);
+
+      /** @type {gdjs.NavMeshAgentRuntimeBehavior} */
+      const behavior = /** @type {any} */ (agent.getBehavior('agent'));
+      behavior.setDestination(120, 0, 0);
+
+      expect(behavior.isPathFound()).to.be(false);
+      expect(behavior.getNodeCount()).to.be(0);
+    } finally {
+      /** @type {any} */ (THREE.Box3.prototype).intersectsTriangle =
+        originalIntersectsTriangle;
+    }
   });
 
   it('updates debug mesh settings for navmesh surface visualization', function () {

@@ -4,6 +4,48 @@
  * This project is released under the MIT License.
  */
 namespace gdjs {
+  export interface AbstractRuntimeObject3D
+    extends gdjs.RuntimeObject,
+      gdjs.Base3DHandler,
+      gdjs.Resizable,
+      gdjs.Scalable,
+      gdjs.Flippable {
+    /**
+     * @returns true when a movement behavior has moved the object and declared
+     * a velocity to be used for physics collisions.
+     */
+    hasEstimatedVelocity(): boolean;
+    /**
+     * Called every frame by the 3D physics once the estimated velocity has been
+     * consumed.
+     */
+    resetEstimatedVelocity(): void;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    getEstimatedVelocityX(): float;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    getEstimatedVelocityY(): float;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    getEstimatedVelocityZ(): float;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    setEstimatedVelocityX(velocityX: float): void;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    setEstimatedVelocityY(velocityY: float): void;
+    /**
+     * @see hasEstimatedVelocity
+     */
+    setEstimatedVelocityZ(velocityZ: float): void;
+  }
+
   /**
    * An axis-aligned bounding box. Used to represents a box around an object for example.
    * @category Core Engine > Object

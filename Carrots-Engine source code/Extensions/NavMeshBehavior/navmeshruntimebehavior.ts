@@ -8,6 +8,14 @@ namespace gdjs {
     get3DRendererObject?: () => THREE.Object3D | null;
     getZ?: () => number;
     setZ?: (z: number) => void;
+    hasEstimatedVelocity?: () => boolean;
+    resetEstimatedVelocity?: () => void;
+    getEstimatedVelocityX?: () => number;
+    getEstimatedVelocityY?: () => number;
+    getEstimatedVelocityZ?: () => number;
+    setEstimatedVelocityX?: (velocityX: number) => void;
+    setEstimatedVelocityY?: (velocityY: number) => void;
+    setEstimatedVelocityZ?: (velocityZ: number) => void;
   };
 
   type RuntimeLayerRendererWith3D = {
@@ -83,6 +91,8 @@ namespace gdjs {
   const navMeshAgentDebugPathZOffset = 1.5;
   const navMeshAgentProgressEpsilon = 0.25;
   const navMeshAgentStuckCheckMinSeconds = 0.25;
+  const navMeshAgentPositionSyncEpsilon = 0.1;
+  const navMeshGeometryEpsilon = 1e-6;
 
   const clamp = (value: number, min: number, max: number): number =>
     Math.max(min, Math.min(max, value));
@@ -580,8 +590,210 @@ namespace gdjs {
         if (box.containsPoint(a) || box.containsPoint(b) || box.containsPoint(c)) {
           return true;
         }
+        if (
+          this._isTriangleNearlyFlat(a, b, c) &&
+          this._triangleZOverlapsBox(box, a, b, c) &&
+          this._triangleOverlapsBoxXY(box, a, b, c)
+        ) {
+          return true;
+        }
       }
       return false;
+    }
+
+    private _isTriangleNearlyFlat(
+      a: THREE.Vector3,
+      b: THREE.Vector3,
+      c: THREE.Vector3
+    ): boolean {
+      const minZ = Math.min(a.z, b.z, c.z);
+      const maxZ = Math.max(a.z, b.z, c.z);
+      return maxZ - minZ <= navMeshGeometryEpsilon;
+    }
+
+    private _triangleZOverlapsBox(
+      box: THREE.Box3,
+      a: THREE.Vector3,
+      b: THREE.Vector3,
+      c: THREE.Vector3
+    ): boolean {
+      const minZ = Math.min(a.z, b.z, c.z);
+      const maxZ = Math.max(a.z, b.z, c.z);
+      return maxZ >= box.min.z && minZ <= box.max.z;
+    }
+
+    private _triangleOverlapsBoxXY(
+      box: THREE.Box3,
+      a: THREE.Vector3,
+      b: THREE.Vector3,
+      c: THREE.Vector3
+    ): boolean {
+      const minX = Math.min(a.x, b.x, c.x);
+      const maxX = Math.max(a.x, b.x, c.x);
+      const minY = Math.min(a.y, b.y, c.y);
+      const maxY = Math.max(a.y, b.y, c.y);
+      if (
+        maxX < box.min.x ||
+        minX > box.max.x ||
+        maxY < box.min.y ||
+        minY > box.max.y
+      ) {
+        return false;
+      }
+
+      if (
+        this._isPointInsideBoxXY(a, box) ||
+        this._isPointInsideBoxXY(b, box) ||
+        this._isPointInsideBoxXY(c, box)
+      ) {
+        return true;
+      }
+
+      const corners = [
+        { x: box.min.x, y: box.min.y },
+        { x: box.max.x, y: box.min.y },
+        { x: box.max.x, y: box.max.y },
+        { x: box.min.x, y: box.max.y },
+      ];
+      for (const corner of corners) {
+        if (this._isPointInsideTriangleXY(corner.x, corner.y, a, b, c)) {
+          return true;
+        }
+      }
+
+      const triangleEdges = [
+        [a, b],
+        [b, c],
+        [c, a],
+      ] as const;
+      const boxEdges = [
+        [corners[0], corners[1]],
+        [corners[1], corners[2]],
+        [corners[2], corners[3]],
+        [corners[3], corners[0]],
+      ] as const;
+      for (const triangleEdge of triangleEdges) {
+        for (const boxEdge of boxEdges) {
+          if (
+            this._segmentsIntersectXY(
+              triangleEdge[0].x,
+              triangleEdge[0].y,
+              triangleEdge[1].x,
+              triangleEdge[1].y,
+              boxEdge[0].x,
+              boxEdge[0].y,
+              boxEdge[1].x,
+              boxEdge[1].y
+            )
+          ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    private _isPointInsideBoxXY(point: THREE.Vector3, box: THREE.Box3): boolean {
+      return (
+        point.x >= box.min.x &&
+        point.x <= box.max.x &&
+        point.y >= box.min.y &&
+        point.y <= box.max.y
+      );
+    }
+
+    private _isPointInsideTriangleXY(
+      x: number,
+      y: number,
+      a: THREE.Vector3,
+      b: THREE.Vector3,
+      c: THREE.Vector3
+    ): boolean {
+      const d1 = this._edgeSignXY(x, y, a, b);
+      const d2 = this._edgeSignXY(x, y, b, c);
+      const d3 = this._edgeSignXY(x, y, c, a);
+      const hasNegative =
+        d1 < -navMeshGeometryEpsilon ||
+        d2 < -navMeshGeometryEpsilon ||
+        d3 < -navMeshGeometryEpsilon;
+      const hasPositive =
+        d1 > navMeshGeometryEpsilon ||
+        d2 > navMeshGeometryEpsilon ||
+        d3 > navMeshGeometryEpsilon;
+      return !(hasNegative && hasPositive);
+    }
+
+    private _edgeSignXY(
+      x: number,
+      y: number,
+      a: THREE.Vector3,
+      b: THREE.Vector3
+    ): number {
+      return (x - b.x) * (a.y - b.y) - (a.x - b.x) * (y - b.y);
+    }
+
+    private _segmentsIntersectXY(
+      ax: number,
+      ay: number,
+      bx: number,
+      by: number,
+      cx: number,
+      cy: number,
+      dx: number,
+      dy: number
+    ): boolean {
+      const direction1 = this._directionXY(cx, cy, dx, dy, ax, ay);
+      const direction2 = this._directionXY(cx, cy, dx, dy, bx, by);
+      const direction3 = this._directionXY(ax, ay, bx, by, cx, cy);
+      const direction4 = this._directionXY(ax, ay, bx, by, dx, dy);
+
+      if (
+        ((direction1 > 0 && direction2 < 0) ||
+          (direction1 < 0 && direction2 > 0)) &&
+        ((direction3 > 0 && direction4 < 0) ||
+          (direction3 < 0 && direction4 > 0))
+      ) {
+        return true;
+      }
+
+      return (
+        (Math.abs(direction1) <= navMeshGeometryEpsilon &&
+          this._isPointOnSegmentXY(cx, cy, dx, dy, ax, ay)) ||
+        (Math.abs(direction2) <= navMeshGeometryEpsilon &&
+          this._isPointOnSegmentXY(cx, cy, dx, dy, bx, by)) ||
+        (Math.abs(direction3) <= navMeshGeometryEpsilon &&
+          this._isPointOnSegmentXY(ax, ay, bx, by, cx, cy)) ||
+        (Math.abs(direction4) <= navMeshGeometryEpsilon &&
+          this._isPointOnSegmentXY(ax, ay, bx, by, dx, dy))
+      );
+    }
+
+    private _directionXY(
+      ax: number,
+      ay: number,
+      bx: number,
+      by: number,
+      cx: number,
+      cy: number
+    ): number {
+      return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
+    }
+
+    private _isPointOnSegmentXY(
+      ax: number,
+      ay: number,
+      bx: number,
+      by: number,
+      px: number,
+      py: number
+    ): boolean {
+      return (
+        px >= Math.min(ax, bx) - navMeshGeometryEpsilon &&
+        px <= Math.max(ax, bx) + navMeshGeometryEpsilon &&
+        py >= Math.min(ay, by) - navMeshGeometryEpsilon &&
+        py <= Math.max(ay, by) + navMeshGeometryEpsilon
+      );
     }
 
     private _closestTriangle(
@@ -1539,6 +1751,10 @@ namespace gdjs {
     private _stuck: boolean;
     private _stuckElapsedSeconds: number;
     private _lastStuckCheckDistance: number;
+    private _oldX: number;
+    private _oldY: number;
+    private _oldZ: number;
+    private _hasSyncedOwnerPosition: boolean;
     private _registeredInManager: boolean;
     private _debugPathLine: THREE.Line | null;
     private _debugPathSignature: string;
@@ -1629,6 +1845,10 @@ namespace gdjs {
       this._stuck = false;
       this._stuckElapsedSeconds = 0;
       this._lastStuckCheckDistance = Number.POSITIVE_INFINITY;
+      this._oldX = 0;
+      this._oldY = 0;
+      this._oldZ = 0;
+      this._hasSyncedOwnerPosition = false;
       this._registeredInManager = false;
       this._debugPathLine = null;
       this._debugPathSignature = '';
@@ -1725,6 +1945,18 @@ namespace gdjs {
         this._registeredInManager = true;
       }
 
+      const currentOwnerPosition = this._getOwnerPosition();
+      const ownerMovedExternally =
+        this._hasOwnerPositionChangedBeyondEpsilon(currentOwnerPosition);
+      if (ownerMovedExternally) {
+        this._rememberOwnerPosition(currentOwnerPosition);
+        if (this._destination) {
+          this._timeSinceRepath = this._repathIntervalSeconds;
+        }
+      } else if (!this._hasSyncedOwnerPosition) {
+        this._rememberOwnerPosition(currentOwnerPosition);
+      }
+
       if (!this._enabled) {
         this._moving = false;
         this._currentSpeed = 0;
@@ -1776,7 +2008,7 @@ namespace gdjs {
         return;
       }
       if (isLast && distance <= this._stoppingDistance) {
-        this._setOwnerPosition(target);
+        this._setOwnerPosition(target, dt);
         this._moving = false;
         this._currentSpeed = 0;
         this._remainingDistance = 0;
@@ -1819,7 +2051,7 @@ namespace gdjs {
         }
       }
 
-      this._moveOwnerBy(move);
+      this._moveOwnerBy(move, dt);
       if (this._rotateToVelocity) {
         const len2 = move.x * move.x + move.y * move.y;
         if (len2 > 0.0001) {
@@ -2294,7 +2526,10 @@ namespace gdjs {
       this._moving = true;
       this._currentWaypointIndex = this._path.length > 1 ? 1 : 0;
       if (this._projectOnNavMesh && this._path.length > 0) {
-        this._setOwnerPosition(this._path[0]);
+        this._setOwnerPosition(
+          this._path[0],
+          Math.max(0, this.owner.getElapsedTime() / 1000)
+        );
       }
       this._updateRemainingDistance();
       this._stuck = false;
@@ -2375,18 +2610,67 @@ namespace gdjs {
       );
     }
 
-    private _setOwnerPosition(position: THREE.Vector3): void {
+    private _hasOwnerPositionChangedBeyondEpsilon(
+      position: THREE.Vector3
+    ): boolean {
+      if (!this._hasSyncedOwnerPosition) return true;
+      const totalDelta =
+        Math.abs(position.x - this._oldX) +
+        Math.abs(position.y - this._oldY) +
+        Math.abs(position.z - this._oldZ);
+      return totalDelta > navMeshAgentPositionSyncEpsilon;
+    }
+
+    private _rememberOwnerPosition(position: THREE.Vector3): void {
+      this._oldX = position.x;
+      this._oldY = position.y;
+      this._oldZ = position.z;
+      this._hasSyncedOwnerPosition = true;
+    }
+
+    private _setEstimatedVelocityFromDelta(
+      delta: THREE.Vector3,
+      dt: number
+    ): void {
+      const owner = this.owner as RuntimeObjectWith3DRenderer;
+      if (
+        !owner.setEstimatedVelocityX ||
+        !owner.setEstimatedVelocityY ||
+        !owner.setEstimatedVelocityZ
+      ) {
+        return;
+      }
+
+      if (dt <= 0) {
+        owner.setEstimatedVelocityX(0);
+        owner.setEstimatedVelocityY(0);
+        owner.setEstimatedVelocityZ(0);
+        return;
+      }
+
+      owner.setEstimatedVelocityX(delta.x / dt);
+      owner.setEstimatedVelocityY(delta.y / dt);
+      owner.setEstimatedVelocityZ(delta.z / dt);
+    }
+
+    private _setOwnerPosition(position: THREE.Vector3, dt: number): void {
+      const previous = this._getOwnerPosition();
       this.owner.setX(position.x);
       this.owner.setY(position.y);
       const owner = this.owner as RuntimeObjectWith3DRenderer;
       if (owner.setZ) owner.setZ(position.z);
+      this._rememberOwnerPosition(position);
+      this._setEstimatedVelocityFromDelta(position.clone().sub(previous), dt);
     }
 
-    private _moveOwnerBy(move: THREE.Vector3): void {
-      this.owner.setX(this.owner.getX() + move.x);
-      this.owner.setY(this.owner.getY() + move.y);
+    private _moveOwnerBy(move: THREE.Vector3, dt: number): void {
+      const position = this._getOwnerPosition().add(move);
+      this.owner.setX(position.x);
+      this.owner.setY(position.y);
       const owner = this.owner as RuntimeObjectWith3DRenderer;
-      if (owner.setZ) owner.setZ((owner.getZ ? owner.getZ() : 0) + move.z);
+      if (owner.setZ) owner.setZ(position.z);
+      this._rememberOwnerPosition(position);
+      this._setEstimatedVelocityFromDelta(move, dt);
     }
 
     private _updateRemainingDistance(): void {

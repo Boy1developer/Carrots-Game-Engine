@@ -62,7 +62,6 @@ gd::PlatformExtension *CreateGDJSLinkedObjectsExtension();
 gd::PlatformExtension *CreateGDJSSystemInfoExtension();
 gd::PlatformExtension *CreateGDJSShopifyExtension();
 gd::PlatformExtension *CreateGDJSPathfindingBehaviorExtension();
-gd::PlatformExtension *CreateGDJSNavMeshBehaviorExtension();
 gd::PlatformExtension *CreateGDJSPhysicsBehaviorExtension();
 gd::PlatformExtension *CreateGDJSParticleSystemExtension();
 }
@@ -189,9 +188,6 @@ void JsPlatform::ReloadBuiltinExtensions() {
   std::cout.flush();
   AddExtension(std::shared_ptr<gd::PlatformExtension>(
       CreateGDJSPathfindingBehaviorExtension()));
-  std::cout.flush();
-  AddExtension(std::shared_ptr<gd::PlatformExtension>(
-      CreateGDJSNavMeshBehaviorExtension()));
   std::cout.flush();
   AddExtension(std::shared_ptr<gd::PlatformExtension>(
       CreateGDJSPhysicsBehaviorExtension()));

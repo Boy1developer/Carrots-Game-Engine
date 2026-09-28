@@ -1,5 +1,17 @@
 //@ts-check
 /// <reference path="../JsExtensionTypes.d.ts" />
+/**
+ * This is a declaration of an extension for GDevelop 5.
+ *
+ * ℹ️ Changes in this file are watched and automatically imported if the editor
+ * is running. You can also manually run `node import-GDJS-Runtime.js` (in newIDE/app/scripts).
+ *
+ * The file must be named "JsExtension.js", otherwise GDevelop won't load it.
+ * ⚠️ If you make a change and the extension is not loaded, open the developer console
+ * and search for any errors.
+ *
+ * More information on https://github.com/4ian/GDevelop/blob/master/newIDE/README-extensions.md
+ */
 
 /** @type {ExtensionModule} */
 module.exports = {
@@ -7,595 +19,894 @@ module.exports = {
     const extension = new gd.PlatformExtension();
     extension
       .setExtensionInformation(
-        'NavMeshBehavior',
-        _('3D Navmesh'),
-        _(
-          '3D runtime navmesh with surfaces, obstacles, links and agents.'
-        ),
-        'Carrots Engine Team',
+        'NavMeshPathfinding',
+        _('Navmesh pathfinding'),
+        'Pathfinding allows to compute an efficient path for objects, including crowds, following walkable floors and avoiding obstacles on the way.',
+        '',
         'Open source (MIT License)'
       )
       .setShortDescription(
-        '3D NavMesh: surfaces, obstacles, links, agents, repath and avoidance.'
+        'Navmesh based pathfinding: compute path avoiding obstacles and handle crowds.'
       )
-      .setDimension('3D')
+      .setDimension('2D/3D')
       .setCategory('Movement')
-      .setTags('navmesh, pathfinding, 3d, ai')
-      .setExtensionHelpPath('/behaviors/navmesh');
+      .setTags('pathfinding, obstacle, collision')
+      .setExtensionHelpPath('/behaviors/nav-mesh-pathfinding');
+    extension
+      .addInstructionOrExpressionGroupMetadata(_('Navmesh pathfinding'))
+      .setIcon('JsPlatform/Extensions/nav-mesh-character.svg');
+    {
+      const behavior = new gd.BehaviorJsImplementation();
+      behavior.updateProperty = function (
+        behaviorContent,
+        propertyName,
+        newValue
+      ) {
+        if (propertyName === 'acceleration') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('acceleration')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        if (propertyName === 'maxSpeed') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('maxSpeed')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        if (propertyName === 'angularMaxSpeed') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('angularMaxSpeed')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        if (propertyName === 'rotateObject') {
+          behaviorContent
+            .getOrCreateChild('rotateObject')
+            .setBoolValue(newValue === '1');
+          return true;
+        }
+
+        if (propertyName === 'angleOffset') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('angleOffset')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        if (propertyName === 'radius') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('radius')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        if (propertyName === 'avoidanceSightRange') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          behaviorContent
+            .getOrCreateChild('avoidanceSightRange')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+
+        return false;
+      };
+      behavior.getProperties = function (behaviorContent) {
+        const behaviorProperties = new gd.MapStringPropertyDescriptor();
+
+        behaviorProperties
+          .getOrCreate('acceleration')
+          .setValue(behaviorContent.getChild('acceleration').getStringValue())
+          .setLabel(_('Acceleration'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixelAcceleration());
+
+        behaviorProperties
+          .getOrCreate('maxSpeed')
+          .setValue(behaviorContent.getChild('maxSpeed').getStringValue())
+          .setLabel(_('Max. speed'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixelSpeed());
+
+        behaviorProperties
+          .getOrCreate('angularMaxSpeed')
+          .setValue(
+            behaviorContent.getChild('angularMaxSpeed').getStringValue()
+          )
+          .setLabel(_('Rotation speed'))
+          .setGroup(_('Rotation'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getAngularSpeed());
+
+        behaviorProperties
+          .getOrCreate('rotateObject')
+          .setValue(
+            behaviorContent.getChild('rotateObject').getBoolValue()
+              ? 'true'
+              : 'false'
+          )
+          .setLabel(_('Rotate object'))
+          .setGroup(_('Rotation'))
+          .setType('Boolean');
+
+        behaviorProperties
+          .getOrCreate('angleOffset')
+          .setValue(behaviorContent.getChild('angleOffset').getStringValue())
+          .setLabel(_('Angle offset'))
+          .setGroup(_('Rotation'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getDegreeAngle());
+
+        behaviorProperties
+          .getOrCreate('radius')
+          .setValue(behaviorContent.getChild('radius').getStringValue())
+          .setLabel(_('Radius'))
+          .setDescription(
+            _(
+              'Use the circle inside the object width and height when left to 0.'
+            )
+          )
+          .setGroup(_('Collision'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel());
+
+        behaviorProperties
+          .getOrCreate('avoidanceSightRange')
+          .setValue(
+            behaviorContent.getChild('avoidanceSightRange').getStringValue()
+          )
+          .setLabel(_('Avoidance sight range'))
+          .setGroup(_('Collision'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel());
+
+        return behaviorProperties;
+      };
+
+      behavior.initializeContent = function (behaviorContent) {
+        behaviorContent.addChild('acceleration').setDoubleValue(400);
+        behaviorContent.addChild('maxSpeed').setDoubleValue(200);
+        behaviorContent.addChild('angularMaxSpeed').setDoubleValue(180);
+        behaviorContent.addChild('rotateObject').setBoolValue(true);
+        behaviorContent.addChild('angleOffset').setDoubleValue(0);
+        behaviorContent.addChild('radius').setDoubleValue(0);
+        behaviorContent.addChild('avoidanceSightRange').setDoubleValue(120);
+      };
+
+      const sharedData = new gd.BehaviorSharedDataJsImplementation();
+      sharedData.updateProperty = function (
+        sharedContent,
+        propertyName,
+        newValue
+      ) {
+        if (propertyName === 'cellSize') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('cellSize')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'cellDepth') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('cellDepth')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'slopeMaxAngle') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('slopeMaxAngle')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'stairHeightMax') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('stairHeightMax')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'walkableRadius') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('walkableRadius')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'walkableDepth') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('walkableDepth')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        if (propertyName === 'speedScaleY') {
+          const newValueAsNumber = parseFloat(newValue);
+          if (newValueAsNumber !== newValueAsNumber) return false;
+          sharedContent
+            .getOrCreateChild('speedScaleY')
+            .setDoubleValue(newValueAsNumber);
+          return true;
+        }
+        return false;
+      };
+      sharedData.getProperties = function (sharedContent) {
+        const sharedProperties = new gd.MapStringPropertyDescriptor();
+
+        sharedProperties
+          .getOrCreate('cellSize')
+          .setLabel(_('Cell size'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel())
+          .setValue(
+            sharedContent.getChild('cellSize').getDoubleValue().toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('cellDepth')
+          .setLabel(_('Cell depth'))
+          .setGroup(_('3D only'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel())
+          .setValue(
+            sharedContent.getChild('cellDepth').getDoubleValue().toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('slopeMaxAngle')
+          .setLabel(_('Slope max. angle'))
+          .setGroup(_('3D only'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getDegreeAngle())
+          .setValue(
+            sharedContent
+              .getChild('slopeMaxAngle')
+              .getDoubleValue()
+              .toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('stairHeightMax')
+          .setLabel(_('Max. stair height'))
+          .setGroup(_('3D only'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel())
+          .setValue(
+            sharedContent
+              .getChild('stairHeightMax')
+              .getDoubleValue()
+              .toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('walkableRadius')
+          .setLabel(_('Walkable radius'))
+          .setDescription(
+            _(
+              'The biggest character radius is automatically used when left negative.'
+            )
+          )
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel())
+          .setValue(
+            sharedContent
+              .getChild('walkableRadius')
+              .getDoubleValue()
+              .toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('walkableDepth')
+          .setLabel(_('Walkable depth'))
+          .setDescription(
+            _(
+              'Minimum floor to ceiling height that will still allow the floor area to be considered walkable.'
+            )
+          )
+          .setGroup(_('3D only'))
+          .setType('Number')
+          .setMeasurementUnit(gd.MeasurementUnit.getPixel())
+          .setValue(
+            sharedContent
+              .getChild('walkableDepth')
+              .getDoubleValue()
+              .toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        sharedProperties
+          .getOrCreate('speedScaleY')
+          .setLabel(_('Y speed scale'))
+          .setDescription(
+            _(
+              'Allow a depth effect for 2D games. Usually set to 0.5 for isometry.'
+            )
+          )
+          .setGroup(_('2D only'))
+          .setType('Number')
+          .setValue(
+            sharedContent.getChild('speedScaleY').getDoubleValue().toString(10)
+          )
+          .setAdvanced(true)
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden);
+
+        return sharedProperties;
+      };
+      sharedData.initializeContent = function (sharedContent) {
+        sharedContent.addChild('cellSize').setDoubleValue(10);
+        sharedContent.addChild('cellDepth').setDoubleValue(10);
+        sharedContent.addChild('slopeMaxAngle').setDoubleValue(50);
+        sharedContent.addChild('stairHeightMax').setDoubleValue(20);
+        sharedContent.addChild('walkableRadius').setDoubleValue(-1);
+        sharedContent.addChild('walkableDepth').setDoubleValue(150);
+        sharedContent.addChild('speedScaleY').setDoubleValue(1);
+      };
+
+      const aut = extension
+        .addBehavior(
+          'NavMeshCharacterBehavior',
+          _('Pathfinding character (navmesh based)'),
+          'NavMeshCharacter',
+          _(
+            'Move objects to a target by following walkable floors and avoiding obstacles. Uses a flexible 2D/3D "navmesh"-based pathfinding.'
+          ),
+          '',
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'NavMeshCharacterBehavior',
+          //@ts-ignore The class hierarchy is incorrect leading to a type error, but this is valid.
+          behavior,
+          sharedData
+        )
+        .markAsIrrelevantForChildObjects()
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/NavMeshCharacterRuntimeBehavior.js'
+        )
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/NavMeshObstacleRuntimeBehavior.js'
+        )
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/recast-navigation.wasm.js'
+        )
+        .addRequiredFile(
+          'Extensions/NavMeshBehavior/recast-navigation.wasm.wasm'
+        )
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/recast-navigation-generators.js'
+        );
+
+      aut
+        .addAction(
+          'MoveTo',
+          _('Move to a position'),
+          _('Move the object to a position'),
+          _('Move _PARAM0_ to _PARAM2_ ; _PARAM3_ ; _PARAM4_'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('expression', _('Destination X position'))
+        .addParameter('expression', _('Destination Y position'))
+        .addParameter('expression', _('Destination Z position'))
+        .setFunctionName('moveTo');
+
+      aut
+        .addCondition(
+          'PathFound',
+          _('Path found'),
+          _('Check if a path has been found.'),
+          _('A path has been found for _PARAM0_'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('pathFound');
+
+      aut
+        .addCondition(
+          'DestinationReached',
+          _('Destination reached'),
+          _('Check if the destination was reached.'),
+          _('_PARAM0_ reached its destination'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('destinationReached');
+
+      aut
+        .addExpressionAndConditionAndAction(
+          'number',
+          'Acceleration',
+          _('Acceleration'),
+          _('the acceleration when moving the object'),
+          _('the acceleration on the path'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .useStandardParameters('number', gd.ParameterOptions.makeNewOptions())
+        .setFunctionName('setAcceleration')
+        .setGetter('getAcceleration');
+
+      aut
+        .addExpressionAndConditionAndAction(
+          'number',
+          'MaxSpeed',
+          _('Maximum speed'),
+          _('the maximum speed when moving the object'),
+          _('the max. speed on the path'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .useStandardParameters(
+          'number',
+          gd.ParameterOptions.makeNewOptions().setDescription(
+            _('Max speed (in pixels per second)')
+          )
+        )
+        .setFunctionName('setMaxSpeed')
+        .setGetter('getMaxSpeed');
+
+      aut
+        .addExpressionAndConditionAndAction(
+          'number',
+          'Speed',
+          _('Speed'),
+          _('Change the speed of the object on the path'),
+          _('the speed on the path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .useStandardParameters(
+          'number',
+          gd.ParameterOptions.makeNewOptions().setDescription(
+            _('Speed (in pixels per second)')
+          )
+        )
+        .setFunctionName('setSpeed')
+        .setGetter('getSpeed');
+
+      aut
+        .addScopedCondition(
+          'MovementAngleIsAround',
+          _('Angle of movement on its path'),
+          _('Compare the angle of movement of an object on its path.'),
+          _('Angle of movement of _PARAM0_ is _PARAM2_ ± _PARAM3_°'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('expression', _('Angle, in degrees'))
+        .addParameter('expression', _('Tolerance, in degrees'));
+
+      aut
+        .addExpressionAndConditionAndAction(
+          'number',
+          'AngularMaxSpeed',
+          _('Angular maximum speed'),
+          _('the maximum angular speed when moving the object'),
+          _('the max. angular speed on the path'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .useStandardParameters(
+          'number',
+          gd.ParameterOptions.makeNewOptions().setDescription(
+            _('Max angular speed (in degrees per second)')
+          )
+        )
+        .setFunctionName('setAngularMaxSpeed')
+        .setGetter('getAngularMaxSpeed');
+
+      aut
+        .addExpressionAndConditionAndAction(
+          'number',
+          'AngleOffset',
+          _('Rotation offset'),
+          _('the rotation offset applied when moving the object'),
+          _('the rotation offset on the path'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .useStandardParameters(
+          'number',
+          gd.ParameterOptions.makeNewOptions().setDescription(
+            _('Angle (in degrees)')
+          )
+        )
+        .setFunctionName('setAngleOffset')
+        .setGetter('getAngleOffset');
+
+      aut
+        .addScopedAction(
+          'RotateObject',
+          _('Rotate the object'),
+          _('Enable or disable rotation of the object on the path'),
+          _('Enable rotation of _PARAM0_ on the path: _PARAM2_'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('yesorno', _('Rotate object?'))
+        .setFunctionName('setRotateObject');
+
+      aut
+        .addScopedCondition(
+          'ObjectRotated',
+          _('Object rotated'),
+          _('Check if the object is rotated when traveling on its path.'),
+          _('_PARAM0_ is rotated when traveling on its path'),
+          _('Pathfinding configuration'),
+          'JsPlatform/Extensions/nav-mesh-character.svg',
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('isObjectRotated');
+
+      aut
+        .addExpression(
+          'GetNodeX',
+          _('Get a waypoint X position'),
+          _('Get a waypoint X position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('expression', _('Node index (start at 0!)'))
+        .setFunctionName('getNodeX');
+
+      aut
+        .addExpression(
+          'GetNodeY',
+          _('Get a waypoint Y position'),
+          _('Get a waypoint Y position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('expression', _('Node index (start at 0!)'))
+        .setFunctionName('getNodeY');
+
+      aut
+        .addExpression(
+          'GetNodeZ',
+          _('Get a waypoint Z position'),
+          _('Get a waypoint Z position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .addParameter('expression', _('Node index (start at 0!)'))
+        .setFunctionName('getNodeZ');
+
+      aut
+        .addExpression(
+          'NextNodeIndex',
+          _('Index of the next waypoint'),
+          _('Get the index of the next waypoint to reach'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getNextNodeIndex');
+
+      aut
+        .addExpression(
+          'NodeCount',
+          _('Waypoint count'),
+          _('Get the number of waypoints on the path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getNodeCount');
+
+      aut
+        .addExpression(
+          'NextNodeX',
+          _('Get next waypoint X position'),
+          _('Get next waypoint X position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getNextNodeX');
+
+      aut
+        .addExpression(
+          'NextNodeY',
+          _('Get next waypoint Y position'),
+          _('Get next waypoint Y position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getNextNodeY');
+
+      aut
+        .addExpression(
+          'NextNodeZ',
+          _('Get next waypoint Z position'),
+          _('Get next waypoint Z position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getNextNodeZ');
+
+      aut
+        .addExpression(
+          'PreviousNodeX',
+          _('Previous waypoint X position'),
+          _('Previous waypoint X position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getPreviousNodeX');
+
+      aut
+        .addExpression(
+          'PreviousNodeY',
+          _('Previous waypoint Y position'),
+          _('Previous waypoint Y position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getPreviousNodeY');
+
+      aut
+        .addExpression(
+          'PreviousNodeZ',
+          _('Previous waypoint Z position'),
+          _('Previous waypoint Z position'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getPreviousNodeZ');
+
+      aut
+        .addExpression(
+          'DestinationX',
+          _('Destination X position'),
+          _('Destination X position of the path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getDestinationX');
+
+      aut
+        .addExpression(
+          'DestinationY',
+          _('Destination Y position'),
+          _('Destination Y position of the path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getDestinationY');
+
+      aut
+        .addExpression(
+          'DestinationZ',
+          _('Destination Z position'),
+          _('Destination Z position of the path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getDestinationZ');
+
+      aut
+        .addExpression(
+          'MovementAngle',
+          _('Angle of movement on its path'),
+          _('Angle of movement on its path'),
+          _('Movement on the path'),
+          'JsPlatform/Extensions/nav-mesh-character.svg'
+        )
+        .addParameter('object', _('Object'))
+        .addParameter('behavior', _('Behavior'), 'NavMeshCharacterBehavior')
+        .setFunctionName('getMovementAngle');
+    }
+    {
+      const behavior = new gd.BehaviorJsImplementation();
+      behavior.updateProperty = function (
+        behaviorContent,
+        propertyName,
+        newValue
+      ) {
+        if (propertyName === 'shape') {
+          const normalizedValue = newValue.toLowerCase();
+          let shapeValue = '';
+          if (normalizedValue === 'box') shapeValue = 'Box';
+          else if (normalizedValue === 'mesh') shapeValue = 'Mesh';
+          else return false;
+
+          behaviorContent.getOrCreateChild('shape').setStringValue(shapeValue);
+          return true;
+        }
+
+        if (propertyName === 'meshShapeResourceName') {
+          behaviorContent
+            .getOrCreateChild('meshShapeResourceName')
+            .setStringValue(newValue);
+          return true;
+        }
+        return false;
+      };
+      behavior.getProperties = function (behaviorContent) {
+        const behaviorProperties = new gd.MapStringPropertyDescriptor();
+
+        behaviorProperties
+          .getOrCreate('shape')
+          .setValue(behaviorContent.getChild('shape').getStringValue())
+          .setType('Choice')
+          .setLabel('Shape')
+          .setQuickCustomizationVisibility(gd.QuickCustomization.Hidden)
+          .addChoice('Box', _('Box'))
+          .addChoice('Mesh', _('Mesh'));
+        behaviorProperties
+          .getOrCreate('meshShapeResourceName')
+          .setValue(
+            behaviorContent.getChild('meshShapeResourceName').getStringValue()
+          )
+          .setType('resource')
+          .addExtraInfo('model3D')
+          .setLabel(_('Simplified 3D model'))
+          .setDescription(_("Leave empty to use object's one"));
+
+        return behaviorProperties;
+      };
+
+      behavior.initializeContent = function (behaviorContent) {
+        behaviorContent.addChild('shape').setStringValue('Box');
+        behaviorContent.addChild('meshShapeResourceName').setStringValue('');
+      };
+
+      const sharedData = new gd.BehaviorSharedDataJsImplementation();
+      sharedData.updateProperty = function (
+        sharedContent,
+        propertyName,
+        newValue
+      ) {
+        return false;
+      };
+      sharedData.getProperties = function (sharedContent) {
+        const sharedProperties = new gd.MapStringPropertyDescriptor();
+        return sharedProperties;
+      };
+      sharedData.initializeContent = function (sharedContent) {};
+
+      extension
+        .addBehavior(
+          'NavMeshObstacleBehavior',
+          _('Floor/obstacle for pathfinding (navmesh based)'),
+          'NavMeshObstacle',
+          _(
+            'Flag objects as being walkable floors and/or obstacles for navmesh pathfinding.'
+          ),
+          '',
+          'JsPlatform/Extensions/nav-mesh-obstacle.svg',
+          'NavMeshObstacle',
+          //@ts-ignore The class hierarchy is incorrect leading to a type error, but this is valid.
+          behavior,
+          sharedData
+        )
+        .markAsIrrelevantForChildObjects()
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/NavMeshObstacleRuntimeBehavior.js'
+        )
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/recast-navigation.wasm.js'
+        )
+        .addRequiredFile(
+          'Extensions/NavMeshBehavior/recast-navigation.wasm.wasm'
+        )
+        .addIncludeFile(
+          'Extensions/NavMeshBehavior/recast-navigation-generators.js'
+        );
+    }
 
     extension
-      .addInstructionOrExpressionGroupMetadata(_('3D Navmesh'))
-      .setIcon('CppPlatform/Extensions/AStaricon16.png');
-
-    const runtimeFile = 'Extensions/NavMeshBehavior/navmeshruntimebehavior.js';
-    const obstacleRuntimeFile =
-      'Extensions/NavMeshBehavior/navmeshobstacleruntimebehavior.js';
-    const toolsRuntimeFile = 'Extensions/NavMeshBehavior/NavMeshTools.js';
-
-    const addRuntimeFiles = behavior =>
-      behavior
-        .setIncludeFile(runtimeFile)
-        .addIncludeFile(obstacleRuntimeFile)
-        .addIncludeFile(toolsRuntimeFile);
-
-    const asBool = value => value === '1' || value === 'true';
-    const toFiniteNumber = (value, fallback) => {
-      const numberValue = parseFloat(value);
-      return Number.isFinite(numberValue) ? numberValue : fallback;
-    };
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-    const surfaceBehavior = new gd.BehaviorJsImplementation();
-    surfaceBehavior.initializeContent = function (behaviorContent) {
-      behaviorContent.setBoolAttribute('enabled', true);
-      behaviorContent.setDoubleAttribute('maxSlope', 60);
-      behaviorContent.setDoubleAttribute('areaCost', 1);
-      behaviorContent.setBoolAttribute('dynamic', true);
-      behaviorContent.setDoubleAttribute('refreshIntervalFrames', 20);
-      behaviorContent.setBoolAttribute('debugMeshEnabled', false);
-      behaviorContent.setDoubleAttribute('debugMeshColor', 3394815);
-    };
-    surfaceBehavior.updateProperty = function (
-      behaviorContent,
-      propertyName,
-      newValue
-    ) {
-      if (propertyName === 'Enabled') {
-        behaviorContent.setBoolAttribute('enabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Dynamic') {
-        behaviorContent.setBoolAttribute('dynamic', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'DebugMeshEnabled') {
-        behaviorContent.setBoolAttribute('debugMeshEnabled', asBool(newValue));
-        return true;
-      }
-
-      if (propertyName === 'MaxSlope') {
-        behaviorContent.setDoubleAttribute(
-          'maxSlope',
-          clamp(toFiniteNumber(newValue, 60), 0, 89.9)
-        );
-        return true;
-      }
-      if (propertyName === 'AreaCost') {
-        behaviorContent.setDoubleAttribute(
-          'areaCost',
-          Math.max(0.001, toFiniteNumber(newValue, 1))
-        );
-        return true;
-      }
-      if (propertyName === 'RefreshIntervalFrames') {
-        behaviorContent.setDoubleAttribute(
-          'refreshIntervalFrames',
-          Math.max(1, toFiniteNumber(newValue, 20))
-        );
-        return true;
-      }
-      if (propertyName === 'DebugMeshColor') {
-        behaviorContent.setDoubleAttribute(
-          'debugMeshColor',
-          Math.round(clamp(toFiniteNumber(newValue, 3394815), 0, 0xffffff))
-        );
-        return true;
-      }
-      return false;
-    };
-    surfaceBehavior.getProperties = function (behaviorContent) {
-      const properties = new gd.MapStringPropertyDescriptor();
-      properties
-        .getOrCreate('Enabled')
-        .setLabel(_('Enabled'))
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('enabled') ? 'true' : 'false');
-      properties
-        .getOrCreate('MaxSlope')
-        .setLabel(_('Max slope (degrees)'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getDegreeAngle())
-        .setValue(behaviorContent.getDoubleAttribute('maxSlope').toString());
-      properties
-        .getOrCreate('AreaCost')
-        .setLabel(_('Area cost'))
-        .setType('Number')
-        .setValue(behaviorContent.getDoubleAttribute('areaCost').toString());
-      properties
-        .getOrCreate('Dynamic')
-        .setLabel(_('Dynamic updates'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('dynamic') ? 'true' : 'false');
-      properties
-        .getOrCreate('RefreshIntervalFrames')
-        .setLabel(_('Refresh interval (frames)'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(
-          behaviorContent.getDoubleAttribute('refreshIntervalFrames').toString()
-        );
-      properties
-        .getOrCreate('DebugMeshEnabled')
-        .setLabel(_('Debug mesh'))
-        .setGroup(_('Debug'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('debugMeshEnabled') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('DebugMeshColor')
-        .setLabel(_('Debug mesh color'))
-        .setGroup(_('Debug'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(behaviorContent.getDoubleAttribute('debugMeshColor').toString());
-      return properties;
-    };
-
-    const obstacleBehavior = new gd.BehaviorJsImplementation();
-    obstacleBehavior.initializeContent = function (behaviorContent) {
-      behaviorContent.setBoolAttribute('enabled', true);
-      behaviorContent.setDoubleAttribute('margin', 8);
-      behaviorContent.setBoolAttribute('dynamic', true);
-      behaviorContent.setDoubleAttribute('refreshIntervalFrames', 10);
-    };
-    obstacleBehavior.updateProperty = function (
-      behaviorContent,
-      propertyName,
-      newValue
-    ) {
-      if (propertyName === 'Enabled') {
-        behaviorContent.setBoolAttribute('enabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Dynamic') {
-        behaviorContent.setBoolAttribute('dynamic', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Margin') {
-        behaviorContent.setDoubleAttribute(
-          'margin',
-          Math.max(0, toFiniteNumber(newValue, 8))
-        );
-        return true;
-      }
-      if (propertyName === 'RefreshIntervalFrames') {
-        behaviorContent.setDoubleAttribute(
-          'refreshIntervalFrames',
-          Math.max(1, toFiniteNumber(newValue, 10))
-        );
-        return true;
-      }
-      return false;
-    };
-    obstacleBehavior.getProperties = function (behaviorContent) {
-      const properties = new gd.MapStringPropertyDescriptor();
-      properties
-        .getOrCreate('Enabled')
-        .setLabel(_('Enabled'))
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('enabled') ? 'true' : 'false');
-      properties
-        .getOrCreate('Margin')
-        .setLabel(_('Obstacle margin'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixel())
-        .setValue(behaviorContent.getDoubleAttribute('margin').toString());
-      properties
-        .getOrCreate('Dynamic')
-        .setLabel(_('Dynamic updates'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('dynamic') ? 'true' : 'false');
-      properties
-        .getOrCreate('RefreshIntervalFrames')
-        .setLabel(_('Refresh interval (frames)'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(
-          behaviorContent.getDoubleAttribute('refreshIntervalFrames').toString()
-        );
-      return properties;
-    };
-
-    const linkBehavior = new gd.BehaviorJsImplementation();
-    linkBehavior.initializeContent = function (behaviorContent) {
-      behaviorContent.setBoolAttribute('enabled', true);
-      behaviorContent.setDoubleAttribute('targetX', 128);
-      behaviorContent.setDoubleAttribute('targetY', 0);
-      behaviorContent.setDoubleAttribute('targetZ', 0);
-      behaviorContent.setBoolAttribute('bidirectional', true);
-      behaviorContent.setDoubleAttribute('costMultiplier', 1);
-      behaviorContent.setBoolAttribute('dynamic', true);
-      behaviorContent.setDoubleAttribute('refreshIntervalFrames', 10);
-    };
-    linkBehavior.updateProperty = function (
-      behaviorContent,
-      propertyName,
-      newValue
-    ) {
-      if (propertyName === 'Enabled') {
-        behaviorContent.setBoolAttribute('enabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Bidirectional') {
-        behaviorContent.setBoolAttribute('bidirectional', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Dynamic') {
-        behaviorContent.setBoolAttribute('dynamic', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'TargetX') {
-        behaviorContent.setDoubleAttribute(
-          'targetX',
-          toFiniteNumber(newValue, 128)
-        );
-        return true;
-      }
-      if (propertyName === 'TargetY') {
-        behaviorContent.setDoubleAttribute('targetY', toFiniteNumber(newValue, 0));
-        return true;
-      }
-      if (propertyName === 'TargetZ') {
-        behaviorContent.setDoubleAttribute('targetZ', toFiniteNumber(newValue, 0));
-        return true;
-      }
-      if (propertyName === 'CostMultiplier') {
-        behaviorContent.setDoubleAttribute(
-          'costMultiplier',
-          clamp(toFiniteNumber(newValue, 1), 0.01, 100)
-        );
-        return true;
-      }
-      if (propertyName === 'RefreshIntervalFrames') {
-        behaviorContent.setDoubleAttribute(
-          'refreshIntervalFrames',
-          Math.max(1, toFiniteNumber(newValue, 10))
-        );
-        return true;
-      }
-      return false;
-    };
-    linkBehavior.getProperties = function (behaviorContent) {
-      const properties = new gd.MapStringPropertyDescriptor();
-      properties
-        .getOrCreate('Enabled')
-        .setLabel(_('Enabled'))
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('enabled') ? 'true' : 'false');
-      properties
-        .getOrCreate('TargetX')
-        .setLabel(_('Target X'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixel())
-        .setValue(behaviorContent.getDoubleAttribute('targetX').toString());
-      properties
-        .getOrCreate('TargetY')
-        .setLabel(_('Target Y'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixel())
-        .setValue(behaviorContent.getDoubleAttribute('targetY').toString());
-      properties
-        .getOrCreate('TargetZ')
-        .setLabel(_('Target Z'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixel())
-        .setValue(behaviorContent.getDoubleAttribute('targetZ').toString());
-      properties
-        .getOrCreate('Bidirectional')
-        .setLabel(_('Bidirectional'))
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('bidirectional') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('CostMultiplier')
-        .setLabel(_('Cost multiplier'))
-        .setType('Number')
-        .setValue(behaviorContent.getDoubleAttribute('costMultiplier').toString());
-      properties
-        .getOrCreate('Dynamic')
-        .setLabel(_('Dynamic updates'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('dynamic') ? 'true' : 'false');
-      properties
-        .getOrCreate('RefreshIntervalFrames')
-        .setLabel(_('Refresh interval (frames)'))
-        .setGroup(_('Runtime updates'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(
-          behaviorContent.getDoubleAttribute('refreshIntervalFrames').toString()
-        );
-      return properties;
-    };
-
-    const agentBehavior = new gd.BehaviorJsImplementation();
-    agentBehavior.initializeContent = function (behaviorContent) {
-      behaviorContent.setBoolAttribute('enabled', true);
-      behaviorContent.setDoubleAttribute('speed', 220);
-      behaviorContent.setDoubleAttribute('acceleration', 900);
-      behaviorContent.setDoubleAttribute('stoppingDistance', 12);
-      behaviorContent.setBoolAttribute('autoRepath', true);
-      behaviorContent.setDoubleAttribute('repathIntervalSeconds', 0.35);
-      behaviorContent.setBoolAttribute('rotateToVelocity', true);
-      behaviorContent.setBoolAttribute('projectOnNavMesh', true);
-      behaviorContent.setBoolAttribute('avoidanceEnabled', true);
-      behaviorContent.setDoubleAttribute('avoidanceRadius', 48);
-      behaviorContent.setDoubleAttribute('avoidanceStrength', 0.45);
-      behaviorContent.setBoolAttribute('debugPathEnabled', false);
-      behaviorContent.setDoubleAttribute('debugPathColor', 58879);
-    };
-    agentBehavior.updateProperty = function (
-      behaviorContent,
-      propertyName,
-      newValue
-    ) {
-      if (propertyName === 'Enabled') {
-        behaviorContent.setBoolAttribute('enabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'AutoRepath') {
-        behaviorContent.setBoolAttribute('autoRepath', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'RotateToVelocity') {
-        behaviorContent.setBoolAttribute('rotateToVelocity', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'ProjectOnNavMesh') {
-        behaviorContent.setBoolAttribute('projectOnNavMesh', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'AvoidanceEnabled') {
-        behaviorContent.setBoolAttribute('avoidanceEnabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'DebugPathEnabled') {
-        behaviorContent.setBoolAttribute('debugPathEnabled', asBool(newValue));
-        return true;
-      }
-      if (propertyName === 'Speed') {
-        behaviorContent.setDoubleAttribute(
-          'speed',
-          Math.max(1, toFiniteNumber(newValue, 220))
-        );
-        return true;
-      }
-      if (propertyName === 'Acceleration') {
-        behaviorContent.setDoubleAttribute(
-          'acceleration',
-          Math.max(1, toFiniteNumber(newValue, 900))
-        );
-        return true;
-      }
-      if (propertyName === 'StoppingDistance') {
-        behaviorContent.setDoubleAttribute(
-          'stoppingDistance',
-          Math.max(0, toFiniteNumber(newValue, 12))
-        );
-        return true;
-      }
-      if (propertyName === 'RepathIntervalSeconds') {
-        behaviorContent.setDoubleAttribute(
-          'repathIntervalSeconds',
-          Math.max(0.05, toFiniteNumber(newValue, 0.35))
-        );
-        return true;
-      }
-      if (propertyName === 'AvoidanceRadius') {
-        behaviorContent.setDoubleAttribute(
-          'avoidanceRadius',
-          Math.max(0, toFiniteNumber(newValue, 48))
-        );
-        return true;
-      }
-      if (propertyName === 'AvoidanceStrength') {
-        behaviorContent.setDoubleAttribute(
-          'avoidanceStrength',
-          clamp(toFiniteNumber(newValue, 0.45), 0, 2)
-        );
-        return true;
-      }
-      if (propertyName === 'DebugPathColor') {
-        behaviorContent.setDoubleAttribute(
-          'debugPathColor',
-          Math.round(clamp(toFiniteNumber(newValue, 58879), 0, 0xffffff))
-        );
-        return true;
-      }
-      return false;
-    };
-    agentBehavior.getProperties = function (behaviorContent) {
-      const properties = new gd.MapStringPropertyDescriptor();
-      properties
-        .getOrCreate('Enabled')
-        .setLabel(_('Enabled'))
-        .setType('Boolean')
-        .setValue(behaviorContent.getBoolAttribute('enabled') ? 'true' : 'false');
-      properties
-        .getOrCreate('Speed')
-        .setLabel(_('Speed'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixelSpeed())
-        .setValue(behaviorContent.getDoubleAttribute('speed').toString());
-      properties
-        .getOrCreate('Acceleration')
-        .setLabel(_('Acceleration'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixelAcceleration())
-        .setValue(behaviorContent.getDoubleAttribute('acceleration').toString());
-      properties
-        .getOrCreate('StoppingDistance')
-        .setLabel(_('Stopping distance'))
-        .setType('Number')
-        .setMeasurementUnit(gd.MeasurementUnit.getPixel())
-        .setValue(behaviorContent.getDoubleAttribute('stoppingDistance').toString());
-      properties
-        .getOrCreate('AutoRepath')
-        .setLabel(_('Auto repath'))
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('autoRepath') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('RepathIntervalSeconds')
-        .setLabel(_('Repath interval (seconds)'))
-        .setType('Number')
-        .setValue(
-          behaviorContent.getDoubleAttribute('repathIntervalSeconds').toString()
-        );
-      properties
-        .getOrCreate('RotateToVelocity')
-        .setLabel(_('Rotate to velocity'))
-        .setGroup(_('Advanced'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('rotateToVelocity') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('ProjectOnNavMesh')
-        .setLabel(_('Project on navmesh'))
-        .setGroup(_('Advanced'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('projectOnNavMesh') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('AvoidanceEnabled')
-        .setLabel(_('Avoidance enabled'))
-        .setGroup(_('Avoidance'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('avoidanceEnabled') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('AvoidanceRadius')
-        .setLabel(_('Avoidance radius'))
-        .setGroup(_('Avoidance'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(behaviorContent.getDoubleAttribute('avoidanceRadius').toString());
-      properties
-        .getOrCreate('AvoidanceStrength')
-        .setLabel(_('Avoidance strength'))
-        .setGroup(_('Avoidance'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(
-          behaviorContent.getDoubleAttribute('avoidanceStrength').toString()
-        );
-      properties
-        .getOrCreate('DebugPathEnabled')
-        .setLabel(_('Debug path painter'))
-        .setGroup(_('Debug'))
-        .setAdvanced(true)
-        .setType('Boolean')
-        .setValue(
-          behaviorContent.getBoolAttribute('debugPathEnabled') ? 'true' : 'false'
-        );
-      properties
-        .getOrCreate('DebugPathColor')
-        .setLabel(_('Debug path color'))
-        .setGroup(_('Debug'))
-        .setAdvanced(true)
-        .setType('Number')
-        .setValue(behaviorContent.getDoubleAttribute('debugPathColor').toString());
-      return properties;
-    };
-
-    const surface = extension.addBehavior(
-      'NavMeshSurfaceBehavior',
-      _('3D Navmesh surface'),
-      'NavMeshSurface',
-      _('Contribute this 3D object mesh to navmesh generation.'),
-      '',
-      'CppPlatform/Extensions/AStaricon.png',
-      'NavMeshSurfaceBehavior',
-      // @ts-ignore
-      surfaceBehavior,
-      new gd.BehaviorsSharedData()
-    );
-    addRuntimeFiles(surface);
-
-    const obstacle = extension.addBehavior(
-      'NavMeshObstacleBehavior',
-      _('3D Navmesh obstacle'),
-      'NavMeshObstacle',
-      _('Block navmesh triangles using this object 3D bounds.'),
-      '',
-      'CppPlatform/Extensions/AStaricon.png',
-      'NavMeshObstacleBehavior',
-      // @ts-ignore
-      obstacleBehavior,
-      new gd.BehaviorsSharedData()
-    );
-    addRuntimeFiles(obstacle);
-
-    const link = extension.addBehavior(
-      'NavMeshLinkBehavior',
-      _('3D Navmesh link'),
-      'NavMeshLink',
-      _('Create an off-mesh link connecting two 3D positions for agents.'),
-      '',
-      'CppPlatform/Extensions/AStaricon.png',
-      'NavMeshLinkBehavior',
-      // @ts-ignore
-      linkBehavior,
-      new gd.BehaviorsSharedData()
-    );
-    addRuntimeFiles(link);
-
-    const agent = extension.addBehavior(
-      'NavMeshAgentBehavior',
-      _('3D Navmesh agent'),
-      'NavMeshAgent',
-      _('Move this object in 3D on navmesh surfaces using dynamic pathfinding.'),
-      '',
-      'CppPlatform/Extensions/AStaricon.png',
-      'NavMeshAgentBehavior',
-      // @ts-ignore
-      agentBehavior,
-      new gd.BehaviorsSharedData()
-    );
-    addRuntimeFiles(agent);
+      .addAction(
+        'EnableDebugDraw',
+        _('Draw pathfinding walkable area'),
+        _('This activates the display of the walkable area (in blue).'),
+        _('Enable debugging view of navmesh pathfinding: _PARAM1_'),
+        '',
+        'res/actions/planicon24.png',
+        'res/actions/planicon.png'
+      )
+      .addCodeOnlyParameter('currentScene', '')
+      .addParameter('yesorno', _('Enable debug draw'), '', false)
+      .setDefaultValue('yes')
+      .getCodeExtraInformation()
+      .addIncludeFile(
+        'Extensions/NavMeshBehavior/NavMeshObstacleRuntimeBehavior.js'
+      )
+      .addIncludeFile('Extensions/NavMeshBehavior/recast-navigation.wasm.js')
+      .addIncludeFile(
+        'Extensions/NavMeshBehavior/recast-navigation-generators.js'
+      )
+      .addIncludeFile(
+        'Extensions/NavMeshBehavior/NavMeshDebugPixiRenderer.js'
+      )
+      .setFunctionName('gdjs.NavMeshObstaclesManager.enableDebugDraw');
 
     return extension;
   },
 
-  runExtensionSanityTests: function () {
+  runExtensionSanityTests: function (gd, extension) {
     return [];
   },
 };
